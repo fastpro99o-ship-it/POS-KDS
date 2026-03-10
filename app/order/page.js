@@ -110,18 +110,25 @@ export default function OrderPage() {
         playNewOrderSound();
     };
 
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
+
     const handleSubmit = async () => {
         if (basketItems.length === 0) {
             toast.error('الطلب فارغ! أضف أصناف أولاً');
             return;
         }
+
         setIsSubmitting(true);
+        const totalAmount = basketItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
         const payload = {
             table,
             type: orderType,
+            total_amount: totalAmount,
+            payment_method: paymentMethod, // Include payment method
             items: basketItems.map(i => ({
                 name: i.name,
                 qty: i.qty,
+                price: i.price, // Save price at the time of order
                 station: i.station,
                 note: i.note || '',
             })),
@@ -130,6 +137,8 @@ export default function OrderPage() {
         if (!isOnline) {
             saveOfflineOrder(payload);
             setIsSubmitting(false);
+            setBasketItems([]);
+            toast.success('تم حفظ الطلب محلياً (أوفلاين) 📶');
             return;
         }
 
@@ -143,14 +152,9 @@ export default function OrderPage() {
             if (data.success) {
                 setSubmitted({ orderId: data.orderId, table, type: orderType, items: basketItems });
                 setBasketItems([]);
+                setPaymentMethod('Cash'); // Reset
                 toast.success('تم إرسال الطلب للمطبخ! 🍽️');
                 playNewOrderSound();
-                if ('Notification' in window && Notification.permission === 'granted') {
-                    new Notification('✅ طلب جديد أُرسل للمطبخ!', {
-                        body: `طاولة ${table} • ${orderType} • ${basketItems.length} أصناف`,
-                        icon: '/favicon.ico',
-                    });
-                }
             } else {
                 toast.error('حدث خطأ، سيتم الحفظ محلياً');
                 saveOfflineOrder(payload);
@@ -234,6 +238,21 @@ export default function OrderPage() {
                                             <option key={t} value={t}>{t}</option>
                                         ))}
                                     </select>
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-1.5">طريقة الدفع</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['Cash', 'Card', 'Online'].map(method => (
+                                        <button
+                                            key={method}
+                                            onClick={() => setPaymentMethod(method)}
+                                            className={`py-2 text-[10px] font-bold rounded-lg border transition-all ${paymentMethod === method ? 'bg-primary text-white border-primary shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-100 dark:border-gray-700 hover:bg-gray-100'}`}
+                                        >
+                                            {method === 'Cash' ? 'كاش' : method === 'Card' ? 'بطاقة' : 'أونلاين'}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 

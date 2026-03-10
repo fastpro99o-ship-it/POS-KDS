@@ -364,6 +364,26 @@ export default function KitchenDisplay() {
         return displayOrders.filter(o => o.displayStation === filter);
     }, [displayOrders, filter]);
 
+    const handleStatusUpdate = async (id, newStatus) => {
+        // 1. Optimistic Update
+        setOrders(prev => prev.map(o => String(o.id) === String(id) ? { ...o, status: newStatus } : o));
+
+        if (isOnline) {
+            const { error } = await supabase
+                .from('orders')
+                .update({ status: newStatus, preparation_start_at: newStatus === 'preparing' ? new Date().toISOString() : undefined })
+                .eq('id', id);
+
+            if (error) {
+                fetch('/api/orders', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, status: newStatus })
+                }).catch(e => console.error('Status update failed', e));
+            }
+        }
+    };
+
     const realBump = async (id) => {
         console.log('Bumping order ID:', id);
         const orderToRemove = orders.find(o => String(o.id) === String(id));
@@ -389,7 +409,7 @@ export default function KitchenDisplay() {
             // Attempt Supabase first
             const { error } = await supabase
                 .from('orders')
-                .update({ status: 'completed' })
+                .update({ status: 'completed', ready_at: new Date().toISOString() })
                 .eq('id', id);
 
             // If Supabase fails (e.g., Demo Mode), fallback to Local API
@@ -457,7 +477,7 @@ export default function KitchenDisplay() {
             <div className="mb-6 space-y-4">
                 <div className="flex items-center justify-between">
                     <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                        {['All', 'Grill', 'Salads', 'Oven', 'Fryer'].map((station) => (
+                        {['All', 'Kitchen', 'Bar', 'Grill', 'Salads', 'Oven', 'Fryer'].map((station) => (
                             <button
                                 key={station}
                                 onClick={() => setFilter(station)}
@@ -527,6 +547,7 @@ export default function KitchenDisplay() {
                             key={order.splitId}
                             order={order}
                             onBump={handleBump}
+                            onStatusUpdate={handleStatusUpdate}
                         />
                     ))}
                 </AnimatePresence>

@@ -15,6 +15,8 @@ export async function GET(request) {
 
     let isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+    let orders = [...global.mockOrders];
+
     if (!isDemoMode) {
         let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
         if (status === 'active') {
@@ -23,17 +25,22 @@ export async function GET(request) {
 
         const { data, error } = await query;
         if (!error && data) {
-            return NextResponse.json(data);
+            // Combine and prioritize database orders, but keep unique memory orders
+            const dbIds = new Set(data.map(o => String(o.id)));
+            const uniqueMemory = global.mockOrders.filter(o => !dbIds.has(String(o.id)));
+            orders = [...data, ...uniqueMemory];
         }
-        // Fallback to mock on error
     }
 
     if (status === 'active') {
-        const activeOrders = global.mockOrders.filter(o => o.status !== 'completed');
+        const activeOrders = orders.filter(o => o.status !== 'completed');
+        if (activeOrders.length > 0) {
+            console.log(`🔍 Polling: Returning ${activeOrders.length} active orders (${activeOrders.filter(o => String(o.id).includes('demo') || String(o.id).includes('fallback')).length} from memory)`);
+        }
         return NextResponse.json(activeOrders);
     }
 
-    return NextResponse.json(global.mockOrders || []);
+    return NextResponse.json(orders);
 }
 
 export async function PATCH(request) {
@@ -72,11 +79,21 @@ export async function PATCH(request) {
 export async function POST(request) {
     try {
         const orderData = await request.json();
+        console.log('🚀 Incoming Order from Mobile:', JSON.stringify(orderData, null, 2));
 
         // 1. Basic Validation
         if (!orderData.items || orderData.items.length === 0) {
             return NextResponse.json({ error: 'Invalid Order Data' }, { status: 400 });
         }
+
+        const newOrderBase = {
+            table_number: orderData.table,
+            type: orderData.type || 'Dine-In',
+            items: orderData.items,
+            total_amount: orderData.total_amount || 0,
+            status: 'pending',
+            created_at: new Date().toISOString()
+        };
 
         // 2. Check for Supabase Keys (Demo Mode Fallback)
         if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -84,12 +101,8 @@ export async function POST(request) {
 
             // Store in Memory
             const newOrder = {
+                ...newOrderBase,
                 id: 'demo-' + Date.now() + Math.random().toString(36).substr(2, 9),
-                table_number: orderData.table,
-                type: orderData.type || 'Dine-In',
-                items: orderData.items,
-                status: 'pending',
-                created_at: new Date().toISOString()
             };
 
             global.mockOrders.push(newOrder);
@@ -110,7 +123,9 @@ export async function POST(request) {
                     table_number: orderData.table,
                     type: orderData.type || 'Dine-In',
                     items: orderData.items,
+                    total_amount: orderData.total_amount || 0,
                     status: 'pending',
+                    payment_method: orderData.payment_method || 'Cash',
                     created_at: new Date().toISOString()
                 }
             ])
@@ -118,14 +133,10 @@ export async function POST(request) {
 
         if (error) {
             console.error('Supabase Error:', error);
-            // Fallback to demo success if table doesn't exist
+            // Fallback to demo success
             const fallbackOrder = {
+                ...newOrderBase,
                 id: 'fallback-' + Date.now(),
-                table_number: orderData.table,
-                type: orderData.type || 'Dine-In',
-                items: orderData.items,
-                status: 'pending',
-                created_at: new Date().toISOString()
             };
             global.mockOrders.push(fallbackOrder);
 

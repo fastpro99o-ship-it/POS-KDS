@@ -14,6 +14,9 @@ function getOrderStatusDisplay(order) {
     if (order.status === 'completed') {
         return { label: '✓ مكتمل', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' };
     }
+    if (order.status === 'preparing') {
+        return { label: '👨‍🍳 يطبخ الآن', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
+    }
     if (order.status === 'cancelled') {
         return { label: '🚫 ملغى', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 line-through' };
     }
@@ -117,29 +120,59 @@ export default function AdminPage() {
     };
 
     const handlePrintOrder = (order) => {
-        const items = (order.items || []).map(i => `  • ${i.qty}x ${i.name}${i.note ? ` (${i.note})` : ''}`).join('\n');
-        const win = window.open('', '_blank', 'width=400,height=500');
-        win.document.write(`
-            <html><head><title>Ticket #${String(order.id).slice(-6)}</title>
-            <style>
-                body { font-family: monospace; font-size: 13px; padding: 20px; max-width: 300px; }
-                h2 { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 8px; }
-                .info { margin: 8px 0; }
-                .items { margin: 12px 0; border-top: 1px dashed #000; padding-top: 8px; }
-                .footer { border-top: 2px dashed #000; margin-top: 12px; padding-top: 8px; text-align: center; font-size: 11px; }
-            </style></head>
-            <body>
-                <h2>🍽️ Kitchen Ticket</h2>
-                <div class="info">Order: <strong>#${String(order.id).slice(-6)}</strong></div>
-                <div class="info">Table: <strong>${order.table_number || order.table || 'N/A'}</strong></div>
-                <div class="info">Type: <strong>${order.type || 'Dine-In'}</strong></div>
-                <div class="info">Time: <strong>${formatTime(order.created_at)}</strong></div>
-                <div class="items"><strong>Items:</strong><br/><pre>${items}</pre></div>
-                <div class="footer">KDS Kitchen Display System</div>
-            </body></html>
+        const printWindow = window.open('', '_blank');
+        const itemsHtml = (order.items || []).map(item => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px;">
+                <span>${item.qty}x ${item.name}</span>
+                <span>${(Number(item.price || 0) * item.qty).toFixed(2)} DH</span>
+            </div>
+        `).join('');
+
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Bill #${String(order.id).slice(-6)}</title>
+                    <style>
+                        @media print { @page { margin: 0; } body { margin: 0.5cm; } }
+                        body { font-family: 'Courier New', Courier, monospace; width: 80mm; margin: 0 auto; color: #000; }
+                        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+                        .details { margin-bottom: 10px; font-size: 12px; }
+                        .total { border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px; font-weight: bold; font-size: 18px; display: flex; justify-content: space-between; }
+                        .footer { text-align: center; margin-top: 20px; font-size: 11px; border-top: 1px solid #eee; padding-top: 10px; }
+                    </style>
+                </head>
+                <body onload="window.print(); window.close();">
+                    <div class="header">
+                        <h2 style="margin: 0;">PARIS FOOD</h2>
+                        <p style="margin: 5px 0; font-size: 12px;">Fast Food & Restaurant</p>
+                        <p style="margin: 0; font-size: 11px;">فاتورة طلب رقم: #${String(order.id).slice(-6)}</p>
+                    </div>
+                    <div class="details">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>تاريخ: ${new Date().toLocaleDateString('ar-MA')}</span>
+                            <span>وقت: ${new Date().toLocaleTimeString('ar-MA')}</span>
+                        </div>
+                        <div style="margin-top: 5px;">
+                            <b>الطاولة:</b> ${order.table_number || order.table || 'توصيل'} | <b>النوع:</b> ${order.type || 'Dine-In'}
+                        </div>
+                    </div>
+                    <div style="border-bottom: 1px solid #000; margin-bottom: 5px; padding-bottom: 5px; font-weight: bold;">
+                        الأصناف
+                    </div>
+                    ${itemsHtml}
+                    <div class="total">
+                        <span>المجموع الإجمالي</span>
+                        <span>${Number(order.total_amount || 0).toFixed(2)} DH</span>
+                    </div>
+                    <div class="footer">
+                        <p>شكراً لزيارتكم!</p>
+                        <p>Merci de votre visite!</p>
+                        <p style="font-size: 9px; color: #666;">Generated by KDS POS Pro</p>
+                    </div>
+                </body>
+            </html>
         `);
-        win.document.close();
-        win.print();
+        printWindow.document.close();
     };
 
     const handleBump = async (id) => {
@@ -211,20 +244,12 @@ export default function AdminPage() {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5);
 
-    // Revenue estimate (from MenuGrid prices — approximate)
-    const PRICE_MAP = {
-        'Classic Burger': 45, 'Cheese Burger': 50, 'Crispy Chicken': 48,
-        'Mixed Grill': 85, 'Grilled Chicken': 65, 'Kofta': 55,
-        'Caesar Salad': 35, 'Fattoush': 28, 'Greek Salad': 32,
-        'French Fries': 22, 'Onion Rings': 25, 'Garlic Bread': 18,
-        'Soft Drink': 15, 'Fresh Juice': 25, 'Water': 8,
-    };
-    const revenue = filteredOrders.reduce((sum, order) => {
-        return sum + (order.items || []).reduce((orderSum, item) => {
-            const price = PRICE_MAP[item.name] || 30;
-            return orderSum + price * (item.qty || 1);
-        }, 0);
-    }, 0);
+    const revenue = filteredOrders.reduce((sum, order) => sum + (Number(order.total_amount) || 0), 0);
+    const revenueByMethod = filteredOrders.reduce((acc, order) => {
+        const method = order.payment_method || 'Cash';
+        acc[method] = (acc[method] || 0) + (Number(order.total_amount) || 0);
+        return acc;
+    }, {});
 
     if (!authed) return null;
 
@@ -280,9 +305,9 @@ export default function AdminPage() {
                         color="green"
                     />
                     <AdminStatsCard
-                        title="الإيرادات التقديرية"
+                        title="إجمالي الإيرادات"
                         value={`${revenue.toLocaleString()} DH`}
-                        subtitle="مجموع الطلبات"
+                        subtitle={`${revenueByMethod.Cash || 0} Cash | ${revenueByMethod.Card || 0} Card`}
                         icon="payments"
                         color="blue"
                     />

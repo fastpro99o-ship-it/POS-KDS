@@ -6,7 +6,7 @@ import { cn, parseItemName } from '@/lib/utils';
 
 const MAX_TIME = 600; // 10 mins = danger zone
 
-const OrderCard = ({ order, onBump }) => {
+const OrderCard = ({ order, onBump, onStatusUpdate }) => {
     const [elapsed, setElapsed] = useState(0);
 
     useEffect(() => {
@@ -27,12 +27,12 @@ const OrderCard = ({ order, onBump }) => {
 
     const config = {
         new: {
-            border: 'border-blue-500',
-            bg: 'bg-white dark:bg-gray-800',
-            timerColor: 'text-blue-600 dark:text-blue-400',
-            timerBg: 'bg-blue-50 dark:bg-blue-900/20',
-            bar: 'bg-blue-400',
-            badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+            border: 'border-zinc-300 dark:border-zinc-600',
+            bg: 'bg-white dark:bg-surface-dark',
+            timerColor: 'text-zinc-600 dark:text-zinc-400',
+            timerBg: 'bg-zinc-100 dark:bg-zinc-800',
+            bar: 'bg-zinc-300',
+            badge: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
             label: 'NEW',
         },
         warning: {
@@ -68,6 +68,8 @@ const OrderCard = ({ order, onBump }) => {
     const primaryId = order.idString ? order.idString.split(',')[0] : order.id;
     const isGrouped = order.idString && order.idString.split(',').length > 1;
 
+    const isPreparing = order.status === 'preparing';
+
     return (
         <motion.div
             layout
@@ -82,12 +84,16 @@ const OrderCard = ({ order, onBump }) => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className={cn('relative flex flex-col rounded-xl border-l-[6px] shadow-sm overflow-hidden cursor-grab active:cursor-grabbing', c.border, c.bg)}
+            className={cn(
+                'relative flex flex-col rounded-2xl shadow-soft border-l-[6px] overflow-hidden cursor-grab active:cursor-grabbing transition-all duration-300 hover:shadow-lg',
+                isPreparing ? 'border-primary bg-primary-light/50 dark:bg-primary-light/10' : c.border,
+                !isPreparing && c.bg
+            )}
         >
             {/* Timer Progress Bar */}
             <div className="h-1 bg-gray-100 dark:bg-gray-700 w-full">
                 <div
-                    className={cn('h-full transition-all duration-1000', c.bar)}
+                    className={cn('h-full transition-all duration-1000', isPreparing ? 'bg-primary' : c.bar)}
                     style={{ width: `${progressPct}%` }}
                 />
             </div>
@@ -96,18 +102,13 @@ const OrderCard = ({ order, onBump }) => {
             <div className="p-4 border-b border-gray-100 dark:border-gray-700/50 flex justify-between items-start">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">#{String(primaryId).slice(-6)}</h3>
-                        <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-md tracking-wider', c.badge)}>
-                            {c.label}
+                        <h3 className="text-xl font-poppins font-bold text-text-main dark:text-gray-100">#{String(primaryId).slice(-6)}</h3>
+                        <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-md tracking-wider', isPreparing ? 'bg-primary-light text-primary' : c.badge)}>
+                            {isPreparing ? 'PREPARING' : c.label}
                         </span>
                         {isGrouped && (
                             <span className="text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-1.5 py-0.5 rounded-md">
                                 مجمع
-                            </span>
-                        )}
-                        {order.isPartial && (
-                            <span className="text-[10px] font-bold bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded-md border border-dashed border-gray-400">
-                                جزء
                             </span>
                         )}
                         {status === 'late' && (
@@ -115,16 +116,16 @@ const OrderCard = ({ order, onBump }) => {
                         )}
                     </div>
                     <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        {order.type} • {(order.table || '').toString().match(/^\d+$/) ? `Table ${order.table}` : (order.table || 'N/A')}
+                        {order.type} • {(order.table || '').toString().match(/^\d+$/) ? `طاولة ${order.table}` : (order.table || 'N/A')}
                     </p>
                 </div>
 
                 {/* Timer Badge */}
-                <div className={cn('flex flex-col items-center px-3 py-1.5 rounded-xl', c.timerBg)}>
-                    <span className={cn('font-mono font-bold text-xl leading-none', c.timerColor)}>
+                <div className={cn('flex flex-col items-center px-3 py-1.5 rounded-xl', isPreparing ? 'bg-primary-light dark:bg-primary-shadow' : c.timerBg)}>
+                    <span className={cn('font-mono font-bold text-xl leading-none', isPreparing ? 'text-primary' : c.timerColor)}>
                         {isLate ? '-' : ''}{mins}:{secs}
                     </span>
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">تبقّى</span>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">الوقت</span>
                 </div>
             </div>
 
@@ -147,7 +148,7 @@ const OrderCard = ({ order, onBump }) => {
                                     </p>
                                 )}
                                 {item.note && (
-                                    <p className="text-xs text-orange-600 dark:text-orange-400 font-bold mt-1 inline-flex items-center gap-1 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded">
+                                    <p className="text-xs text-primary dark:text-primary-light font-bold mt-1 inline-flex items-center gap-1 bg-primary-light/50 px-1.5 py-0.5 rounded">
                                         <span className="material-symbols-outlined text-[14px]">description</span>
                                         {item.note}
                                     </p>
@@ -159,17 +160,24 @@ const OrderCard = ({ order, onBump }) => {
             </div>
 
             {/* Footer/Action */}
-            <div className="p-3 mt-auto bg-gray-50/50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700/50">
-                <button
-                    onClick={() => onBump(order.idString || String(order.id), order.displayStation || 'All')}
-                    className={cn(
-                        'w-full py-3 rounded-lg font-bold text-sm shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2',
-                        'bg-green-600 hover:bg-green-700 text-white shadow-green-200 dark:shadow-none'
-                    )}
-                >
-                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                    {order.isPartial ? 'BUMP PARTIAL' : 'BUMP ORDER'}
-                </button>
+            <div className="p-3 mt-auto bg-gray-50/50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700/50 flex gap-2">
+                {!isPreparing ? (
+                    <button
+                        onClick={() => onStatusUpdate(primaryId, 'preparing')}
+                        className="flex-1 py-3 bg-primary hover:bg-[#E66200] text-white rounded-xl font-bold text-sm shadow-orange-glow transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                        <span className="material-symbols-outlined text-[18px]">play_circle</span>
+                        بدء التحضير
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => onBump(order.idString || String(order.id), order.displayStation || 'All')}
+                        className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-soft transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                        <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                        {order.isPartial ? 'إكمال الجزء' : 'إكمال الطلب'}
+                    </button>
+                )}
             </div>
         </motion.div>
     );

@@ -1,12 +1,12 @@
 export default function AdminStatsCard({ title, value, subtitle, icon, color = 'blue' }) {
     const colorMap = {
-        blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+        blue: 'bg-primary-light dark:bg-primary-shadow text-primary dark:text-primary-light',
         green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
         orange: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
         purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
     };
     const borderMap = {
-        blue: 'border-blue-200 dark:border-blue-800',
+        blue: 'border-primary-light dark:border-primary-shadow',
         green: 'border-green-200 dark:border-green-800',
         orange: 'border-orange-200 dark:border-orange-800',
         purple: 'border-purple-200 dark:border-purple-800',

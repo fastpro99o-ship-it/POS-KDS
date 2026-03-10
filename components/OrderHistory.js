@@ -2,17 +2,12 @@
 
 import { useMemo, useState } from 'react';
 
-const PRICE_MAP = {
-    'Classic Burger': 45, 'Cheese Burger': 50, 'Crispy Chicken': 48,
-    'Mixed Grill': 85, 'Grilled Chicken': 65, 'Kofta': 55,
-    'Caesar Salad': 35, 'Fattoush': 28, 'Greek Salad': 32,
-    'French Fries': 22, 'Onion Rings': 25, 'Garlic Bread': 18,
-    'Soft Drink': 15, 'Fresh Juice': 25, 'Water': 8,
-};
-
 function getOrderStatusDisplay(order) {
     if (order.status === 'completed') {
         return { label: '✓ مكتمل', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' };
+    }
+    if (order.status === 'preparing') {
+        return { label: '👨‍🍳 يطبخ الآن', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
     }
     if (order.status === 'cancelled') {
         return { label: '🚫 ملغى', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 line-through' };
@@ -32,7 +27,7 @@ function getOrderStatusDisplay(order) {
 
 function getOrderRevenue(order) {
     if (order.status === 'cancelled') return 0;
-    return (order.items || []).reduce((sum, i) => sum + (PRICE_MAP[i.name] || 30) * (i.qty || 1), 0);
+    return Number(order.total_amount) || 0;
 }
 
 function formatDate(isoString, startTime) {
