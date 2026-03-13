@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
@@ -17,12 +17,41 @@ const INITIAL_ORDERS = [];
 
 
 
+
 export default function KitchenDisplay() {
     const isOnline = useOnlineStatus();
     const { playNewOrderSound } = useSoundAlert();
 
     const [orders, setOrders] = useState(INITIAL_ORDERS);
     const [partialBumps, setPartialBumps] = useState({});
+    const [flashScreen, setFlashScreen] = useState(false);
+    const [sortOrder, setSortOrder] = useState('oldest'); // 'oldest' | 'newest'
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [completedTimes, setCompletedTimes] = useState([]);
+    const containerRef = useRef(null);
+
+    // ✅ Flash the screen when a new order arrives
+    const triggerFlash = useCallback(() => {
+        setFlashScreen(true);
+        setTimeout(() => setFlashScreen(false), 800);
+    }, []);
+
+    // ✅ Fullscreen toggle
+    const toggleFullscreen = useCallback(() => {
+        if (!document.fullscreenElement) {
+            containerRef.current?.requestFullscreen();
+            setIsFullscreen(true);
+        } else {
+            document.exitFullscreen();
+            setIsFullscreen(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', onFsChange);
+        return () => document.removeEventListener('fullscreenchange', onFsChange);
+    }, []);
 
     // Load from LocalStorage on Mount (Client-side only)
     useEffect(() => {
@@ -256,15 +285,23 @@ export default function KitchenDisplay() {
     // Simulation Handler
     const simulateIncomingOrder = () => {
         const id = Math.floor(Math.random() * 9000) + 1000;
+        const stations = ['Kitchen', 'Oven', 'Bar', 'Grill'];
+        const items = [
+            { name: 'Burger Spécial', qty: 2, station: 'Kitchen', categories: ['Burgers'] },
+            { name: 'Pizza Margherita', qty: 1, station: 'Oven', categories: ['Pizza'] },
+            { name: 'Jus d\'Orange', qty: 3, station: 'Bar', categories: ['Boissons & Salades'] },
+        ];
         const newOrder = {
             id: String(id),
-            table: 'Test',
-            type: 'Simulation',
+            table: String(Math.floor(Math.random() * 20) + 1),
+            type: 'Dine-In',
             startTime: Date.now(),
-            items: [{ name: 'Simulated Burger', qty: 1, station: 'Grill' }]
+            status: 'pending',
+            items: [items[Math.floor(Math.random() * items.length)]]
         };
         setOrders(prev => [newOrder, ...prev]);
         playNewOrderSound();
+        triggerFlash();
     };
 
     // Grouping & Splitting Logic
@@ -365,21 +402,41 @@ export default function KitchenDisplay() {
     }, [displayOrders, filter]);
 
     const handleStatusUpdate = async (id, newStatus) => {
+        console.log(`🟡 تحديث حالة الطلب #${id} إلى: ${newStatus}`);
+
         // 1. Optimistic Update
         setOrders(prev => prev.map(o => String(o.id) === String(id) ? { ...o, status: newStatus } : o));
 
         if (isOnline) {
-            const { error } = await supabase
+            // Ensure ID is integer if it's a pure number string
+            const dbId = !isNaN(id) && !String(id).includes('-') ? parseInt(id) : id;
+
+            const updateData = { status: newStatus };
+            if (newStatus === 'preparing') updateData.preparation_start_at = new Date().toISOString();
+            if (newStatus === 'ready') updateData.ready_at = new Date().toISOString();
+
+            const { error, data } = await supabase
                 .from('orders')
-                .update({ status: newStatus, preparation_start_at: newStatus === 'preparing' ? new Date().toISOString() : undefined })
-                .eq('id', id);
+                .update(updateData)
+                .eq('id', dbId)
+                .select();
 
             if (error) {
+                console.error('❌ خطأ في تحديث Supabase:', error);
                 fetch('/api/orders', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, status: newStatus })
-                }).catch(e => console.error('Status update failed', e));
+                }).catch(e => console.error('Status update failed (Local API)', e));
+            } else {
+                console.log('✅ تم تحديث الحالة في Supabase بنجاح:', data);
+                if (newStatus === 'waiter_requested') {
+                    toast.success('تم إرسال تنبيه عاجل للنادل! 🚨');
+                } else if (newStatus === 'ready') {
+                    toast.success('تم إرسال تنبيه للنادل! 🔔');
+                } else {
+                    toast.success('بدء التحضير');
+                }
             }
         }
     };
@@ -471,102 +528,187 @@ export default function KitchenDisplay() {
         localStorage.setItem('kds_partial_bumps', JSON.stringify(newPartialBumps));
     };
 
-    return (
-        <div className="flex flex-col h-full">
-            {/* Filters & Aggregation */}
-            <div className="mb-6 space-y-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                        {['All', 'Kitchen', 'Bar', 'Grill', 'Salads', 'Oven', 'Fryer'].map((station) => (
-                            <button
-                                key={station}
-                                onClick={() => setFilter(station)}
-                                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-primary/20'); }}
-                                onDragLeave={(e) => { e.currentTarget.classList.remove('bg-primary/20'); }}
-                                onDrop={(e) => {
-                                    e.preventDefault();
-                                    e.currentTarget.classList.remove('bg-primary/20');
-                                    const payload = e.dataTransfer.getData('application/json');
-                                    if (!payload) return;
-                                    const { idString, oldStation } = JSON.parse(payload);
-                                    if (station === 'All' || oldStation === station) return;
+    // ✅ Aggregation: count each item across all active orders
+    const aggregation = useMemo(() => {
+        const counts = {};
+        filteredOrders.forEach(order => {
+            order.items.forEach(item => {
+                const key = item.name;
+                counts[key] = (counts[key] || 0) + (item.qty || 1);
+            });
+        });
+        return Object.entries(counts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+    }, [filteredOrders]);
 
-                                    const ids = idString.split(',');
-                                    setOrders(prev => prev.map(o => {
-                                        if (ids.includes(o.id.toString())) {
-                                            return {
-                                                ...o,
-                                                items: o.items.map(item => ({
-                                                    ...item,
-                                                    station: (item.station || 'Other') === oldStation ? station : item.station
-                                                }))
-                                            };
-                                        }
-                                        return o;
-                                    }));
-                                    toast.success(`تم نقل الطلب إلى قسم ${station}`);
-                                }}
-                                className={cn(
-                                    "px-4 py-2 rounded-md text-sm font-bold transition-all border border-transparent",
-                                    filter === station
-                                        ? "bg-white dark:bg-gray-700 text-primary shadow-sm"
-                                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                                )}
-                            >
-                                {station.toUpperCase()}
-                            </button>
-                        ))}
+    // ✅ Average cook time (from completed bumps stored in state)
+    const avgCookTime = useMemo(() => {
+        if (completedTimes.length === 0) return null;
+        const avg = completedTimes.reduce((s, t) => s + t, 0) / completedTimes.length;
+        const m = Math.floor(avg / 60);
+        const s = String(Math.floor(avg % 60)).padStart(2, '0');
+        return `${m}:${s}`;
+    }, [completedTimes]);
+
+    // ✅ Sort orders by time
+    const sortedOrders = useMemo(() => {
+        return [...filteredOrders].sort((a, b) =>
+            sortOrder === 'oldest'
+                ? a.startTime - b.startTime   // Oldest (most urgent) first
+                : b.startTime - a.startTime   // Newest first
+        );
+    }, [filteredOrders, sortOrder]);
+
+    return (
+        <div ref={containerRef} className={cn('flex flex-col h-full bg-[#F9F9FB] relative', isFullscreen && 'bg-[#F9F9FB]')}>
+
+            {/* ✅ Flash overlay on new order */}
+            <AnimatePresence>
+                {flashScreen && (
+                    <motion.div
+                        initial={{ opacity: 0.6 }}
+                        animate={{ opacity: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.8 }}
+                        className="absolute inset-0 bg-[#FF4B2B] z-50 pointer-events-none"
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* ── Top Header ── */}
+            <header className="shrink-0 bg-white border-b border-[#E8ECEF]">
+                {/* Row 1: Main top bar */}
+                <div className="h-[72px] px-6 flex items-center justify-between">
+                    {/* Left: Open Tickets + Avg time */}
+                    <div className="flex items-center gap-5 w-1/3">
+                        <div className="flex flex-col">
+                            <span className="text-[#0E4F5D] font-bold text-[17px]">
+                                {sortedOrders.length} Open Ticket{sortedOrders.length !== 1 ? 's' : ''}
+                            </span>
+                            {avgCookTime && (
+                                <span className="text-[12px] text-gray-400 font-medium">Avg: {avgCookTime} min</span>
+                            )}
+                        </div>
+                        {/* Live indicator */}
+                        <div className="flex items-center gap-1.5">
+                            <span className="relative flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#27AE60] opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#27AE60]"></span>
+                            </span>
+                            <span className="text-[12px] font-semibold text-[#27AE60]">Live</span>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* Center: Title */}
+                    <div className="flex items-center justify-center gap-2 w-1/3">
+                        <h1 className="text-[20px] font-bold text-[#1a1a1a]">Paris Display</h1>
+                        <span className="text-[11px] font-bold bg-[#27AE60]/10 text-[#27AE60] px-2 py-0.5 rounded-full uppercase tracking-wide">Online</span>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center justify-end gap-2 w-1/3">
+                        {/* Test / Simulate */}
                         <button
                             onClick={simulateIncomingOrder}
-                            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-xs font-bold rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                            title="Simulate new order"
+                            className="flex items-center gap-1 px-3 py-2 text-gray-400 font-semibold text-sm hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
                         >
-                            Test Sound
+                            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                            Test
                         </button>
-                        <span className="flex h-3 w-3 relative">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                        </span>
-                        <span className="text-sm font-bold text-gray-500 dark:text-gray-400">Live Feed</span>
+                        {/* Fullscreen toggle */}
+                        <button
+                            onClick={toggleFullscreen}
+                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                            className="w-9 h-9 flex items-center justify-center border border-[#E8ECEF] rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">
+                                {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
+                            </span>
+                        </button>
                     </div>
                 </div>
 
-                <AggregationBar items={aggregatedItems} />
-            </div>
+                {/* Row 2: Sort control + Aggregation */}
+                <div className="px-6 pb-3 flex items-center gap-4">
+                    {/* Sort Toggle */}
+                    <div className="flex gap-1 bg-[#F5F6FA] p-1 rounded-xl shrink-0">
+                        <button
+                            onClick={() => setSortOrder('oldest')}
+                            className={cn(
+                                'px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1',
+                                sortOrder === 'oldest'
+                                    ? 'bg-white text-[#FF4B2B] shadow-sm'
+                                    : 'text-gray-400 hover:text-gray-700'
+                            )}
+                        >
+                            <span className="material-symbols-outlined text-[14px]">arrow_upward</span>
+                            الأقدم أولاً
+                        </button>
+                        <button
+                            onClick={() => setSortOrder('newest')}
+                            className={cn(
+                                'px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1',
+                                sortOrder === 'newest'
+                                    ? 'bg-white text-[#FF4B2B] shadow-sm'
+                                    : 'text-gray-400 hover:text-gray-700'
+                            )}
+                        >
+                            <span className="material-symbols-outlined text-[14px]">arrow_downward</span>
+                            الأحدث أولاً
+                        </button>
+                    </div>
 
-            {/* Orders Grid */}
-            <motion.div
-                layout
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24"
-            >
-                <AnimatePresence mode="popLayout">
-                    {filteredOrders.map(order => (
-                        <OrderCard
-                            key={order.splitId}
-                            order={order}
-                            onBump={handleBump}
-                            onStatusUpdate={handleStatusUpdate}
-                        />
-                    ))}
-                </AnimatePresence>
-
-                {/* Empty State / Incoming */}
-                {filteredOrders.length === 0 && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="col-span-full h-64 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-xl bg-gray-50/50 dark:bg-gray-900/20"
-                    >
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-full shadow-sm mb-4">
-                            <span className="material-symbols-outlined text-gray-400 text-3xl">restaurant</span>
+                    {/* Aggregation strip */}
+                    {aggregation.length > 0 && (
+                        <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-0.5">
+                            {aggregation.map(({ name, count }) => (
+                                <div key={name} className="flex items-center gap-1.5 bg-[#F5F6FA] border border-[#E8ECEF] rounded-lg px-3 py-1 shrink-0">
+                                    <span className="text-[13px] font-black text-[#FF4B2B]">{count}x</span>
+                                    <span className="text-[12px] font-semibold text-gray-700 max-w-[100px] truncate">{name}</span>
+                                </div>
+                            ))}
                         </div>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">All Caught Up!</h3>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">No active orders for {filter}</p>
-                    </motion.div>
-                )}
-            </motion.div>
+                    )}
+                </div>
+            </header>
+
+            {/* ── Orders Horizontal Grid ── */}
+            <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 custom-scrollbar">
+                <motion.div
+                    layout
+                    className="flex flex-row gap-5 h-full min-w-max items-start"
+                >
+                    <AnimatePresence mode="popLayout">
+                        {sortedOrders.map(order => (
+                            <div key={order.splitId} className="w-[320px] shrink-0 h-full">
+                                <OrderCard
+                                    order={order}
+                                    onBump={handleBump}
+                                    onStatusUpdate={handleStatusUpdate}
+                                />
+                            </div>
+                        ))}
+                    </AnimatePresence>
+
+                    {/* Empty State */}
+                    {sortedOrders.length === 0 && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="flex-1 min-w-[600px] h-full flex flex-col items-center justify-center gap-4"
+                        >
+                            <div className="bg-white p-8 rounded-3xl shadow-sm flex flex-col items-center gap-3">
+                                <span className="material-symbols-outlined text-[#27AE60] text-6xl" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                                <h3 className="text-2xl font-bold text-gray-700">All Caught Up!</h3>
+                                <p className="text-gray-400 text-sm">No active orders at the moment</p>
+                            </div>
+                        </motion.div>
+                    )}
+                </motion.div>
+            </div>
         </div>
     );
 }

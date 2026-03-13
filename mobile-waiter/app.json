@@ -1,15 +1,18 @@
 {
-    "expo": {
-        "name": "Waiter POS",
-        "slug": "pos-waiter-mobile",
-        "version": "1.0.0",
-        "orientation": "portrait",
-        "userInterfaceStyle": "light",
-        "assetBundlePatterns": [
-            "**/*"
-        ],
-        "ios": {
-            "supportsTablet": true
-        }
-    }
+  "expo": {
+    "name": "Waiter POS",
+    "slug": "pos-waiter-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-audio"
+    ]
+  }
 }

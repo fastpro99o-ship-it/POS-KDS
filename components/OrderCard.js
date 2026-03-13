@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { cn, parseItemName } from '@/lib/utils';
 
-const MAX_TIME = 600; // 10 mins = danger zone
+const MAX_TIME = 600; // 10 mins = danger zone (Red)
+const WARN_TIME = 300; // 5 mins = warning zone (Yellow)
 
 const OrderCard = ({ order, onBump, onStatusUpdate }) => {
     const [elapsed, setElapsed] = useState(0);
@@ -18,57 +19,56 @@ const OrderCard = ({ order, onBump, onStatusUpdate }) => {
     }, [order.startTime]);
 
     const status = useMemo(() => {
-        if (elapsed > 600) return 'late';
-        if (elapsed > 300) return 'warning';
+        if (elapsed > MAX_TIME) return 'late';
+        if (elapsed > WARN_TIME) return 'warning';
         return 'new';
     }, [elapsed]);
 
-    const progressPct = Math.min((elapsed / MAX_TIME) * 100, 100);
-
     const config = {
         new: {
-            border: 'border-zinc-300 dark:border-zinc-600',
-            bg: 'bg-white dark:bg-surface-dark',
-            timerColor: 'text-zinc-600 dark:text-zinc-400',
-            timerBg: 'bg-zinc-100 dark:bg-zinc-800',
-            bar: 'bg-zinc-300',
-            badge: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
-            label: 'NEW',
+            headerBg: 'bg-white',
+            headerTextId: 'text-[#2D9CDB] border-b border-[#2D9CDB]',
+            headerTextTable: 'text-gray-400',
+            headerTime: 'text-[#2D9CDB]',
+            cardBorder: 'border-transparent',
         },
         warning: {
-            border: 'border-yellow-400',
-            bg: 'bg-yellow-50/50 dark:bg-yellow-900/10',
-            timerColor: 'text-yellow-600 dark:text-yellow-400',
-            timerBg: 'bg-yellow-50 dark:bg-yellow-900/20',
-            bar: 'bg-yellow-400',
-            badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
-            label: 'SLOW',
+            headerBg: 'bg-[#F2D06B]',
+            headerTextId: 'text-[#1A1A1A]',
+            headerTextTable: 'text-[#1A1A1A]/70',
+            headerTime: 'text-[#1A1A1A]',
+            cardBorder: 'border-[#F2D06B]',
         },
         late: {
-            border: 'border-red-500',
-            bg: 'bg-red-50/30 dark:bg-red-900/10',
-            timerColor: 'text-red-600 dark:text-red-400',
-            timerBg: 'bg-red-50 dark:bg-red-900/20',
-            bar: 'bg-red-500',
-            badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-            label: 'LATE',
+            headerBg: 'bg-[#EB5757]',
+            headerTextId: 'text-white',
+            headerTextTable: 'text-white/80',
+            headerTime: 'text-white',
+            cardBorder: 'border-[#EB5757]',
         },
     };
 
     const c = config[status];
 
-    // Countdown Logic
-    const remaining = MAX_TIME - elapsed;
-    const isLate = remaining < 0;
-    const absRemaining = Math.abs(remaining);
-    const mins = Math.floor(absRemaining / 60);
-    const secs = String(absRemaining % 60).padStart(2, '0');
+    // Countdown/Elapsed Timer format (MM:SS)
+    const mins = Math.floor(elapsed / 60);
+    const secs = String(elapsed % 60).padStart(2, '0');
 
-    // Handle Grouped/Split IDs display
     const primaryId = order.idString ? order.idString.split(',')[0] : order.id;
-    const isGrouped = order.idString && order.idString.split(',').length > 1;
-
     const isPreparing = order.status === 'preparing';
+
+    // Group items by category (fallback to station or 'OTHER')
+    const groupedItems = useMemo(() => {
+        const groups = {};
+        order.items.forEach(item => {
+            // Using category if available, otherwise station, otherwise OTHER
+            const cat = (item.categories && item.categories.length > 0) ? item.categories[0] : (item.station || 'OTHER');
+            const upperCat = String(cat).toUpperCase();
+            if (!groups[upperCat]) groups[upperCat] = [];
+            groups[upperCat].push(item);
+        });
+        return groups;
+    }, [order.items]);
 
     return (
         <motion.div
@@ -80,102 +80,98 @@ const OrderCard = ({ order, onBump, onStatusUpdate }) => {
                     oldStation: order.displayStation || 'All'
                 }));
             }}
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
             className={cn(
-                'relative flex flex-col rounded-2xl shadow-soft border-l-[6px] overflow-hidden cursor-grab active:cursor-grabbing transition-all duration-300 hover:shadow-lg',
-                isPreparing ? 'border-primary bg-primary-light/50 dark:bg-primary-light/10' : c.border,
-                !isPreparing && c.bg
+                'relative flex flex-col bg-white rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] overflow-hidden cursor-grab active:cursor-grabbing h-full border',
+                c.cardBorder
             )}
         >
-            {/* Timer Progress Bar */}
-            <div className="h-1 bg-gray-100 dark:bg-gray-700 w-full">
-                <div
-                    className={cn('h-full transition-all duration-1000', isPreparing ? 'bg-primary' : c.bar)}
-                    style={{ width: `${progressPct}%` }}
-                />
-            </div>
-
-            {/* Header */}
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700/50 flex justify-between items-start">
-                <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-xl font-poppins font-bold text-text-main dark:text-gray-100">#{String(primaryId).slice(-6)}</h3>
-                        <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-md tracking-wider', isPreparing ? 'bg-primary-light text-primary' : c.badge)}>
-                            {isPreparing ? 'PREPARING' : c.label}
-                        </span>
-                        {isGrouped && (
-                            <span className="text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-1.5 py-0.5 rounded-md">
-                                مجمع
-                            </span>
-                        )}
-                        {status === 'late' && (
-                            <span className="animate-pulse flex h-2 w-2 rounded-full bg-red-500" />
-                        )}
-                    </div>
-                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        {order.type} • {(order.table || '').toString().match(/^\d+$/) ? `طاولة ${order.table}` : (order.table || 'N/A')}
-                    </p>
-                </div>
-
-                {/* Timer Badge */}
-                <div className={cn('flex flex-col items-center px-3 py-1.5 rounded-xl', isPreparing ? 'bg-primary-light dark:bg-primary-shadow' : c.timerBg)}>
-                    <span className={cn('font-mono font-bold text-xl leading-none', isPreparing ? 'text-primary' : c.timerColor)}>
-                        {isLate ? '-' : ''}{mins}:{secs}
+            {/* Header section */}
+            <div className={cn('px-5 pt-4 pb-3 flex justify-between items-end', c.headerBg)}>
+                <div className="flex flex-col border-b border-transparent">
+                    <span className={cn('text-sm font-semibold mb-0.5', c.headerTextTable)}>
+                        {(order.table || '').toString().match(/^\d+$/) ? `Table ${order.table}` : (order.table || 'Table ?')}
                     </span>
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">الوقت</span>
+                    <h3 className={cn('text-[28px] font-bold leading-none', c.headerTextId, status === 'new' && 'pb-1')}>
+                        #{String(primaryId).slice(-4)}
+                    </h3>
+                </div>
+                <div className={cn('text-[18px] font-semibold mb-1', c.headerTime)}>
+                    {String(mins).padStart(2, '0')}:{secs}
                 </div>
             </div>
 
-            {/* Items */}
-            <div className="p-4 flex-1 flex flex-col gap-3">
-                {order.items.map((item, idx) => {
-                    const { main, variant, extras } = parseItemName(item.name);
-                    return (
-                        <div key={idx} className="flex items-start gap-4">
-                            <div className="min-w-[36px] h-9 bg-primary/10 dark:bg-primary/20 rounded-lg flex items-center justify-center border border-primary/20">
-                                <span className="text-lg font-black text-primary">{item.qty}x</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
-                                    {main}
-                                </p>
-                                {(variant || extras) && (
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
-                                        {variant} {extras && `• ${extras}`}
-                                    </p>
-                                )}
-                                {item.note && (
-                                    <p className="text-xs text-primary dark:text-primary-light font-bold mt-1 inline-flex items-center gap-1 bg-primary-light/50 px-1.5 py-0.5 rounded">
-                                        <span className="material-symbols-outlined text-[14px]">description</span>
-                                        {item.note}
-                                    </p>
-                                )}
-                            </div>
+            {/* If it's a new ticket, it has a subtle gray border below the header but we simulate it on the groups */}
+
+            {/* Items List (Grouped) */}
+            <div className="flex-1 overflow-y-auto w-full custom-scrollbar">
+                {Object.entries(groupedItems).map(([category, items], gIdx) => (
+                    <div key={gIdx} className="w-full">
+                        {/* Group Category Header */}
+                        <div className="w-full bg-[#f9f9fb] border-y border-[#E8ECEF] px-5 py-2">
+                            <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">{category}</h4>
                         </div>
-                    );
-                })}
+                        
+                        {/* Group Items */}
+                        <div className="flex flex-col w-full">
+                            {items.map((item, idx) => {
+                                const { main, variant, extras } = parseItemName(item.name);
+                                return (
+                                    <div key={idx} className="flex items-start gap-4 px-5 py-4 border-b border-gray-100 last:border-b-0">
+                                        <span className="text-[20px] font-bold text-[#1A1A1A] w-6 shrink-0">{item.qty}</span>
+                                        <div className="flex flex-col mt-0.5">
+                                            <span className="text-[17px] font-bold text-[#1A1A1A] leading-tight mb-2">
+                                                {main}
+                                            </span>
+                                            
+                                            {variant && (
+                                                <span className="text-[14px] font-medium text-[#27AE60] mb-1 leading-snug">
+                                                    - {variant}
+                                                </span>
+                                            )}
+                                            {extras && (
+                                                <span className="text-[14px] font-medium text-[#27AE60] mb-1 leading-snug">
+                                                    - {extras}
+                                                </span>
+                                            )}
+                                            {item.note && (
+                                                <span className="text-[14px] font-medium text-gray-400 leading-snug">
+                                                    {item.note}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
             </div>
 
-            {/* Footer/Action */}
-            <div className="p-3 mt-auto bg-gray-50/50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700/50 flex gap-2">
-                {!isPreparing ? (
-                    <button
+            {/* Footer / Actions */}
+            <div className="px-5 py-4 border-t border-dashed border-[#E8ECEF] bg-white flex items-center justify-between mt-auto">
+                <button 
+                    onClick={() => onStatusUpdate(primaryId, 'waiter_requested')}
+                    className="text-[#27AE60] font-semibold text-[15px] hover:bg-[#27AE60]/10 px-3 py-1.5 rounded-lg transition-colors -ml-3"
+                >
+                    Request Waiter
+                </button>
+                
+                {order.status === 'pending' ? (
+                     <button
                         onClick={() => onStatusUpdate(primaryId, 'preparing')}
-                        className="flex-1 py-3 bg-primary hover:bg-[#E66200] text-white rounded-xl font-bold text-sm shadow-orange-glow transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        className="px-6 py-2 rounded-lg border-2 border-[#E66200] text-[#E66200] font-bold text-[15px] hover:bg-[#E66200]/10 transition-colors"
                     >
-                        <span className="material-symbols-outlined text-[18px]">play_circle</span>
-                        بدء التحضير
+                        Prepare
                     </button>
                 ) : (
                     <button
                         onClick={() => onBump(order.idString || String(order.id), order.displayStation || 'All')}
-                        className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-soft transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        className="px-6 py-2 rounded-lg border-2 border-[#2D9CDB] text-[#2D9CDB] font-bold text-[15px] hover:bg-[#2D9CDB]/10 transition-colors"
                     >
-                        <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                        {order.isPartial ? 'إكمال الجزء' : 'إكمال الطلب'}
+                        Serve
                     </button>
                 )}
             </div>
@@ -184,3 +180,4 @@ const OrderCard = ({ order, onBump, onStatusUpdate }) => {
 };
 
 export default OrderCard;
+

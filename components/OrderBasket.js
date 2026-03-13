@@ -1,62 +1,76 @@
 'use client';
 
+import { useLanguage } from '@/lib/LanguageContext';
+
 export default function OrderBasket({ items, onQtyChange, onRemove, onNote }) {
-    const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    const { t } = useLanguage();
 
     if (items.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-400 dark:text-gray-600">
-                <span className="material-symbols-outlined text-5xl mb-2">shopping_basket</span>
-                <p className="text-sm font-semibold">الطلب فارغ</p>
-                <p className="text-xs mt-1">اختر أصناف من القائمة</p>
+            <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-gray-400">
+                <span className="material-symbols-outlined text-[48px] mb-4 text-[#E8ECEF]">shopping_basket</span>
+                <p className="text-sm font-bold text-gray-400 mb-1">{t('emptyBasket')}</p>
+                <p className="text-xs">{t('emptyBasketSub')}</p>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col gap-3">
-            {items.map(item => (
-                <div key={item.id} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 border border-gray-100 dark:border-gray-700">
-                    <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                            <p className="font-bold text-sm text-gray-900 dark:text-gray-100 truncate">{item.emoji} {item.name}</p>
-                            <p className="text-xs text-primary font-semibold mt-0.5">{(item.price * item.qty).toFixed(0)} DH</p>
+        <div className="flex flex-col gap-6">
+            {items.map(item => {
+                const isImage = item.emoji?.startsWith('/uploads/') || item.emoji?.startsWith('http');
+
+                return (
+                    <div key={item.id} className="flex gap-4 group items-center bg-white rounded-2xl">
+                        {/* Image/Emoji */}
+                        <div className="w-[60px] h-[60px] shrink-0 rounded-[14px] border border-[#E8ECEF] bg-gray-50 shadow-sm flex items-center justify-center overflow-hidden relative">
+                            {isImage ? (
+                                <img src={item.emoji} alt={item.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="text-[28px]">{item.emoji}</span>
+                            )}
+                            <button
+                                onClick={() => onRemove(item.id)}
+                                className="absolute inset-0 bg-red-500 flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                            </button>
                         </div>
-                        <button
-                            onClick={() => onRemove(item.id)}
-                            className="text-gray-400 hover:text-red-500 transition-colors shrink-0"
-                        >
-                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                    </div>
 
-                    {/* Qty Controls */}
-                    <div className="flex items-center gap-2 mt-2">
-                        <button
-                            onClick={() => onQtyChange(item.id, -1)}
-                            className="w-7 h-7 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-primary hover:text-white transition-all font-bold text-sm"
-                        >—</button>
-                        <span className="w-6 text-center font-bold text-gray-900 dark:text-gray-100 text-sm">{item.qty}</span>
-                        <button
-                            onClick={() => onQtyChange(item.id, +1)}
-                            className="w-7 h-7 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-primary hover:text-white transition-all font-bold text-sm"
-                        >+</button>
-                        <input
-                            type="text"
-                            placeholder="ملاحظة..."
-                            value={item.note || ''}
-                            onChange={(e) => onNote(item.id, e.target.value)}
-                            className="flex-1 text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-gray-700 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:border-primary"
-                        />
-                    </div>
-                </div>
-            ))}
+                        {/* Details */}
+                        <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <h4 className="font-bold text-[#1A1A1A] text-sm leading-tight mb-1 truncate" title={item.name}>
+                                {item.name.replace(/\s\([^)]+\)/, '')}
+                            </h4>
+                            <p className="font-bold text-[#FF4B2B] text-sm mb-2.5">{(item.price).toFixed(0)} DH</p>
 
-            {/* Total */}
-            <div className="mt-2 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-600 dark:text-gray-400">المجموع</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">{total.toFixed(0)} DH</span>
-            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => onQtyChange(item.id, -1)}
+                                    className="w-[28px] h-[28px] rounded-lg bg-[#F5F6FA] text-gray-500 hover:text-[#1A1A1A] hover:bg-gray-200 transition-colors font-bold flex items-center justify-center"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">remove</span>
+                                </button>
+                                <span className="w-6 text-center font-bold text-[#1A1A1A] text-[13px]">{item.qty}</span>
+                                <button
+                                    onClick={() => onQtyChange(item.id, +1)}
+                                    className="w-[28px] h-[28px] rounded-lg bg-[#1A1A1A] text-white hover:bg-black transition-colors font-bold shadow-sm flex items-center justify-center"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">add</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Line total */}
+                        <div className="shrink-0 text-right">
+                            <p className="text-sm font-black text-[#1A1A1A]">{(item.price * item.qty).toFixed(0)} DH</p>
+                            {item.qty > 1 && (
+                                <p className="text-xs text-gray-400">{item.qty} × {item.price} DH</p>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

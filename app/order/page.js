@@ -2,12 +2,12 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
 import MenuGrid from '@/components/MenuGrid';
 import OrderBasket from '@/components/OrderBasket';
+import Sidebar from '@/components/Sidebar';
 import useSoundAlert from '@/hooks/useSoundAlert';
 import useOnlineStatus from '@/hooks/useOnlineStatus';
+import { useLanguage } from '@/lib/LanguageContext';
 
 const ORDER_TYPES = ['Dine-In', 'Takeaway', 'Delivery'];
 const TABLES = Array.from({ length: 20 }, (_, i) => String(i + 1));
@@ -15,12 +15,14 @@ const TABLES = Array.from({ length: 20 }, (_, i) => String(i + 1));
 export default function OrderPage() {
     const isOnline = useOnlineStatus();
     const { playNewOrderSound } = useSoundAlert();
+    const { t, dir, lang } = useLanguage();
     const [basketItems, setBasketItems] = useState([]);
     const [table, setTable] = useState('1');
     const [orderType, setOrderType] = useState('Dine-In');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(null);
     const [showMobileBasket, setShowMobileBasket] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
 
     // Request notification permission on mount
     useEffect(() => {
@@ -75,7 +77,14 @@ export default function OrderPage() {
 
     const handleQtyChange = useCallback((id, delta) => {
         setBasketItems(prev => {
-            const updated = prev.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i);
+            const updated = prev.map(i => {
+                if (i.id === id) {
+                    const newQty = i.qty + delta;
+                    if (newQty <= 0) return null; // We'll filter out nulls
+                    return { ...i, qty: newQty };
+                }
+                return i;
+            }).filter(Boolean);
             return updated;
         });
     }, []);
@@ -110,8 +119,6 @@ export default function OrderPage() {
         playNewOrderSound();
     };
 
-    const [paymentMethod, setPaymentMethod] = useState('Cash');
-
     const handleSubmit = async () => {
         if (basketItems.length === 0) {
             toast.error('الطلب فارغ! أضف أصناف أولاً');
@@ -120,17 +127,23 @@ export default function OrderPage() {
 
         setIsSubmitting(true);
         const totalAmount = basketItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
+        
+        // Calculate tax based on the total. The image shows Subtotal $40, Tax $4, Total $44 (10% tax). 
+        // We will pass totalAmount to backend directly, backend doesn't necessarily track tax separately right now,
+        // but let's keep it simple.
+
         const payload = {
             table,
             type: orderType,
-            total_amount: totalAmount,
-            payment_method: paymentMethod, // Include payment method
+            total_amount: totalAmount, // Adjust to your current logic
+            payment_method: paymentMethod,
             items: basketItems.map(i => ({
                 name: i.name,
                 qty: i.qty,
-                price: i.price, // Save price at the time of order
+                price: i.price,
                 station: i.station,
                 note: i.note || '',
+                emoji: i.emoji // Added emoji for visual consistency if needed later
             })),
         };
 
@@ -152,7 +165,7 @@ export default function OrderPage() {
             if (data.success) {
                 setSubmitted({ orderId: data.orderId, table, type: orderType, items: basketItems });
                 setBasketItems([]);
-                setPaymentMethod('Cash'); // Reset
+                setPaymentMethod('Cash');
                 toast.success('تم إرسال الطلب للمطبخ! 🍽️');
                 playNewOrderSound();
             } else {
@@ -167,240 +180,117 @@ export default function OrderPage() {
         }
     };
 
-    return (
-        <>
-            <Header />
-            <main className="max-w-[1400px] mx-auto p-4 sm:p-6 pb-32">
-                <div className="mb-6">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">طلب جديد</h2>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">اختر الأصناف وأرسل الطلب للمطبخ مباشرة</p>
-                </div>
+    const currentDate = new Date().toLocaleDateString(lang === 'ar' ? 'ar-MA' : 'fr-MA', { month: 'long', day: 'numeric', year: 'numeric' });
+    const subtotal = basketItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
+    const totalItems = basketItems.reduce((sum, i) => sum + i.qty, 0);
 
-                {/* Order Confirmation */}
+    return (
+        <div className="flex h-screen bg-[#F5F6FA] text-black overflow-hidden font-sans" dir={dir}>
+            {/* Left Sidebar */}
+            <Sidebar />
+
+            {/* Main Content */}
+            <main className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-[#E8ECEF] bg-white lg:bg-transparent">
+                
+                {/* Top Header */}
+                <header className="h-[88px] shrink-0 px-8 flex items-center justify-between bg-white border-b border-[#E8ECEF]">
+                    <h1 className="text-2xl font-bold text-[#1a1a1a]">Paris Food</h1>
+                    
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2 text-gray-500 font-medium">
+                            <span className="material-symbols-outlined text-[20px]">calendar_today</span>
+                            <span className="text-sm">{currentDate}</span>
+                        </div>
+                        <button className="text-gray-400 relative">
+                            <span className="material-symbols-outlined text-[24px]">notifications</span>
+                            <div className="absolute top-0 right-0 w-2 h-2 rounded-full bg-[#FF4B2B] border-2 border-white"></div>
+                        </button>
+                        <div className="w-10 h-10 rounded-full bg-[#1A1A1A] flex items-center justify-center text-white font-bold text-sm">
+                            RF
+                        </div>
+                    </div>
+                </header>
+
+                {/* Submitted Notification */}
                 {submitted && (
-                    <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-5 flex items-start gap-4">
-                        <div className="bg-green-100 dark:bg-green-900/40 p-3 rounded-xl shrink-0">
-                            <span className="material-symbols-outlined text-green-600 dark:text-green-400 text-2xl">check_circle</span>
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-green-50 border border-green-200 rounded-xl p-4 shadow-xl flex items-center gap-4">
+                        <span className="material-symbols-outlined text-green-600 text-[24px]">check_circle</span>
+                        <div>
+                            <p className="font-bold text-green-800">{t('orderSent')}</p>
+                            <p className="text-sm text-green-600">{t('table')} {submitted.table} · #{submitted.orderId}</p>
                         </div>
-                        <div className="flex-1">
-                            <p className="font-bold text-green-800 dark:text-green-300">تم إرسال الطلب بنجاح!</p>
-                            <p className="text-sm text-green-600 dark:text-green-400 mt-1">
-                                طاولة {submitted.table} • {submitted.type} • {submitted.items.length} صنف
-                            </p>
-                            <p className="text-xs text-green-500 dark:text-green-500 mt-1 font-mono">#{submitted.orderId}</p>
-                        </div>
-                        <button
-                            onClick={() => setSubmitted(null)}
-                            className="text-green-500 hover:text-green-700 transition-colors shrink-0"
-                        >
+                        <button onClick={() => setSubmitted(null)} className="ml-4 text-green-500">
                             <span className="material-symbols-outlined text-[20px]">close</span>
                         </button>
                     </div>
                 )}
 
-                <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Left: Menu */}
-                    <div className="flex-1 min-w-0">
-                        <MenuGrid onAdd={handleAdd} />
-                    </div>
+                {/* Body Area */}
+                <div className="flex-1 overflow-hidden p-6 sm:p-8 bg-[#FDFDFD]">
+                    <MenuGrid onAdd={handleAdd} />
+                </div>
+            </main>
 
-                    {/* Right: Basket (Desktop Sidebar) */}
-                    <div className="hidden lg:block w-[340px] shrink-0">
-                        <div className="sticky top-24 bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-                            <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-primary text-[20px]">receipt_long</span>
-                                تفاصيل الطلب
-                            </h3>
-
-                            {/* Table & Type */}
-                            <div className="grid grid-cols-2 gap-3 mb-4">
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-1.5">الطاولة</label>
-                                    <select
-                                        value={table}
-                                        onChange={e => setTable(e.target.value)}
-                                        className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary"
-                                    >
-                                        {TABLES.map(t => (
-                                            <option key={t} value={t}>طاولة {t}</option>
-                                        ))}
-                                        <option value="Takeaway">Takeaway</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-1.5">النوع</label>
-                                    <select
-                                        value={orderType}
-                                        onChange={e => setOrderType(e.target.value)}
-                                        className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:border-primary"
-                                    >
-                                        {ORDER_TYPES.map(t => (
-                                            <option key={t} value={t}>{t}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="mb-4">
-                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-1.5">طريقة الدفع</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {['Cash', 'Card', 'Online'].map(method => (
-                                        <button
-                                            key={method}
-                                            onClick={() => setPaymentMethod(method)}
-                                            className={`py-2 text-[10px] font-bold rounded-lg border transition-all ${paymentMethod === method ? 'bg-primary text-white border-primary shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-100 dark:border-gray-700 hover:bg-gray-100'}`}
-                                        >
-                                            {method === 'Cash' ? 'كاش' : method === 'Card' ? 'بطاقة' : 'أونلاين'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="border-t border-gray-100 dark:border-gray-700 pt-4 mb-4">
-                                <OrderBasket
-                                    items={basketItems}
-                                    onQtyChange={handleQtyChange}
-                                    onRemove={handleRemove}
-                                    onNote={handleNote}
-                                />
-                            </div>
-
-                            {/* Submit */}
-                            <button
-                                onClick={handleSubmit}
-                                disabled={isSubmitting || basketItems.length === 0}
-                                className="w-full py-3.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-primary/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            {/* Right Sidebar (Order Detail) */}
+            <aside className="w-[380px] shrink-0 bg-white flex flex-col h-full z-10 shadow-[-4px_0_24px_rgba(0,0,0,0.02)] border-l border-[#E8ECEF]">
+                <div className="px-6 py-6 border-b border-[#E8ECEF]">
+                    <div className="flex items-center justify-between mb-2">
+                        <h2 className="text-xl font-bold text-[#1A1A1A]">
+                            {lang === 'ar' ? 'تفاصيل الطلب' : 'Détail commande'}
+                        </h2>
+                        <div className="relative">
+                            <select
+                                value={table}
+                                onChange={e => setTable(e.target.value)}
+                                className="appearance-none bg-white border border-[#E8ECEF] rounded-lg px-4 py-2 pr-8 text-sm font-semibold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#FF4B2B]/20"
                             >
-                                {isSubmitting ? (
-                                    <>
-                                        <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
-                                        جاري الإرسال...
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="material-symbols-outlined text-[20px]">send</span>
-                                        إرسال للمطبخ
-                                        {basketItems.length > 0 && (
-                                            <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                                                {basketItems.reduce((s, i) => s + i.qty, 0)} صنف
-                                            </span>
-                                        )}
-                                    </>
-                                )}
-                            </button>
+                                {TABLES.map(tb => <option key={tb} value={tb}>{t('table')} {tb}</option>)}
+                                <option value="Takeaway">{t('takeaway')}</option>
+                            </select>
+                            <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-[20px]">expand_more</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Mobile Floating Bottom Bar */}
-                {basketItems.length > 0 && (
-                    <div className="lg:hidden fixed bottom-24 left-4 right-4 z-40 animate-in slide-in-from-bottom-5 duration-300">
-                        <button
-                            onClick={() => setShowMobileBasket(true)}
-                            className="w-full bg-primary text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between group active:scale-[0.98] transition-all"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="bg-white/20 p-2 rounded-xl">
-                                    <span className="material-symbols-outlined text-white text-[24px]">shopping_basket</span>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-xs text-white/80 font-bold uppercase tracking-wider">عرض الطلب</p>
-                                    <p className="font-bold text-lg">{basketItems.reduce((s, i) => s + i.qty, 0)} أصناف</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="text-left font-bold text-xl">
-                                    {basketItems.reduce((sum, i) => sum + i.price * i.qty, 0).toFixed(0)} DH
-                                </div>
-                                <span className="material-symbols-outlined text-white/50 group-hover:text-white transition-colors">arrow_forward</span>
-                            </div>
-                        </button>
-                    </div>
-                )}
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                    <OrderBasket
+                        items={basketItems}
+                        onQtyChange={handleQtyChange}
+                        onRemove={handleRemove}
+                        onNote={handleNote}
+                    />
+                </div>
 
-                {/* Mobile Basket Overlay */}
-                {showMobileBasket && (
-                    <div className="lg:hidden fixed inset-0 z-50 bg-white dark:bg-gray-900 animate-in slide-in-from-bottom duration-300 overflow-y-auto pb-32">
-                        <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 p-4 flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-primary text-[24px]">receipt_long</span>
-                                تفاصيل الطلب
-                            </h3>
-                            <button
-                                onClick={() => setShowMobileBasket(false)}
-                                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-800 rounded-full transition-colors"
-                            >
-                                <span className="material-symbols-outlined text-[24px]">close</span>
-                            </button>
+                {/* Summary & Checkout */}
+                <div className="px-6 pb-6 pt-4 border-t border-[#E8ECEF] bg-white">
+                <div className="space-y-3 mb-6">
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-500 font-medium">{t('subtotal')}</span>
+                            <span className="font-bold text-[#1A1A1A]">{subtotal.toFixed(0)} DH</span>
                         </div>
-
-                        <div className="p-4 space-y-6">
-                            {/* Table & Type Selection for Mobile */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block px-1">الطاولة</label>
-                                    <select
-                                        value={table}
-                                        onChange={e => setTable(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none font-bold"
-                                    >
-                                        {TABLES.map(t => (
-                                            <option key={t} value={t}>طاولة {t}</option>
-                                        ))}
-                                        <option value="Takeaway">Takeaway</option>
-                                    </select>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block px-1">النوع</label>
-                                    <select
-                                        value={orderType}
-                                        onChange={e => setOrderType(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none font-bold"
-                                    >
-                                        {ORDER_TYPES.map(t => (
-                                            <option key={t} value={t}>{t}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
-                                <OrderBasket
-                                    items={basketItems}
-                                    onQtyChange={handleQtyChange}
-                                    onRemove={handleRemove}
-                                    onNote={handleNote}
-                                />
-                            </div>
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-500 font-medium">{t('items')}</span>
+                            <span className="font-bold text-[#1A1A1A]">{totalItems}</span>
                         </div>
-
-                        {/* Mobile Submit Button (Fixed) */}
-                        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-t border-gray-100 dark:border-gray-800 z-50">
-                            <button
-                                onClick={async () => {
-                                    await handleSubmit();
-                                    setShowMobileBasket(false);
-                                }}
-                                disabled={isSubmitting || basketItems.length === 0}
-                                className="w-full py-4 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-xl shadow-primary/30 transition-all active:scale-[0.98] flex items-center justify-center gap-3 text-lg"
-                            >
-                                {isSubmitting ? (
-                                    <>
-                                        <span className="material-symbols-outlined animate-spin text-[24px]">progress_activity</span>
-                                        جاري الإرسال للمطبخ...
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="material-symbols-outlined text-[24px]">send</span>
-                                        إرسال للمطبخ بقيمة {basketItems.reduce((sum, i) => sum + i.price * i.qty, 0).toFixed(0)} DH
-                                    </>
-                                )}
-                            </button>
+                        <div className="flex justify-between items-center pt-3 border-t border-[#E8ECEF]">
+                            <span className="text-xl font-bold text-[#1A1A1A]">Total</span>
+                            <span className="text-xl font-bold text-[#FF4B2B]">{subtotal.toFixed(0)} DH</span>
                         </div>
                     </div>
-                )}
-            </main>
-            <Footer />
-        </>
+
+                    <button
+                        onClick={handleSubmit}
+                        disabled={isSubmitting || basketItems.length === 0}
+                        className="w-full bg-[#FF4B2B] hover:bg-[#E63E1C] disabled:opacity-50 disabled:active:scale-100 text-white font-bold py-4 rounded-xl shadow-lg shadow-[#FF4B2B]/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-lg"
+                    >
+                        {isSubmitting ? (
+                            <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                        ) : (
+                            <>{lang === 'ar' ? '🍽️ إرسال للمطبخ' : '🍽️ Envoyer en Cuisine'}</>
+                        )}
+                    </button>
+                </div>
+            </aside>
+        </div>
     );
 }

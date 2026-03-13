@@ -12,6 +12,9 @@ function getOrderStatusDisplay(order) {
     if (order.status === 'cancelled') {
         return { label: '🚫 ملغى', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 line-through' };
     }
+    if (order.status === 'waiter_requested') {
+        return { label: '🚨 مطلوب نادل', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+    }
 
     const start = order.created_at ? new Date(order.created_at).getTime() : (order.startTime || Date.now());
     const elapsed = Math.floor((Date.now() - start) / 1000);
@@ -46,7 +49,7 @@ function getDuration(order) {
     return `${m}m ${s}s`;
 }
 
-export default function OrderHistory({ orders }) {
+export default function OrderHistory({ orders, onPrint, onDelete }) {
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('All');
 
@@ -124,7 +127,7 @@ export default function OrderHistory({ orders }) {
                     <table className="w-full">
                         <thead>
                             <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
-                                {['رقم الطلب', 'الطاولة', 'النوع', 'الأصناف', 'الوقت', 'الإيراد', 'الحالة'].map(h => (
+                                {['رقم الطلب', 'الطاولة', 'النوع', 'الأصناف', 'الوقت', 'الإيراد', 'الحالة', 'إجراءات'].map(h => (
                                     <th key={h} className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                 ))}
                             </tr>
@@ -165,6 +168,20 @@ export default function OrderHistory({ orders }) {
                                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getOrderStatusDisplay(order).color}`}>
                                             {getOrderStatusDisplay(order).label}
                                         </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex gap-2">
+                                            {onPrint && (
+                                                <button onClick={() => onPrint(order)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="طباعة الفاتورة">
+                                                    <span className="material-symbols-outlined text-[20px]">print</span>
+                                                </button>
+                                            )}
+                                            {onDelete && (
+                                                <button onClick={() => onDelete(order.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف الطلب">
+                                                    <span className="material-symbols-outlined text-[20px]">delete</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

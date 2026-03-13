@@ -299,7 +299,7 @@ export default function MenuManager() {
         }
     };
 
-    const catBadge = 'text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
+    const catBadge = 'text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#FF4B2B]/10 text-[#FF4B2B]';
 
     return (
         <div className="space-y-4">
@@ -412,32 +412,32 @@ export default function MenuManager() {
             )}
 
             {/* Table */}
-            <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-[#E8ECEF] rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                                <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الصنف</th>
-                                <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">السعر</th>
-                                <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الفئات</th>
-                                <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">المحطة</th>
-                                <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الحالة</th>
-                                <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">إجراء</th>
+                            <tr className="bg-[#F8F9FA] border-b border-[#E8ECEF]">
+                                <th className="text-left px-4 py-3.5 text-xs font-bold text-gray-500 uppercase tracking-wider">الصنف</th>
+                                <th className="text-left px-4 py-3.5 text-xs font-bold text-gray-500 uppercase tracking-wider">السعر</th>
+                                <th className="text-left px-4 py-3.5 text-xs font-bold text-gray-500 uppercase tracking-wider">الفئات</th>
+                                <th className="text-left px-4 py-3.5 text-xs font-bold text-gray-500 uppercase tracking-wider">المحطة</th>
+                                <th className="text-left px-4 py-3.5 text-xs font-bold text-gray-500 uppercase tracking-wider">الحالة</th>
+                                <th className="text-left px-4 py-3.5 text-xs font-bold text-gray-500 uppercase tracking-wider">إجراء</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        <tbody className="divide-y divide-[#F0F0F0]">
                             {filtered.map(item => (
-                                <tr key={item.id} className={`transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/30 ${!item.available ? 'opacity-50' : ''}`}>
+                                <tr key={item.id} className={`bg-white transition-colors hover:bg-[#FFF8F6] ${!item.available ? 'opacity-50' : ''}`}>
                                     <td className="px-4 py-3">
                                         {editingId === item.id ? (
                                             <div className="flex gap-2">
                                                 <div className="flex flex-col gap-1 w-20">
                                                     <select value={(editData.emoji?.startsWith('/uploads/') || editData.emoji?.startsWith('http')) ? '' : editData.emoji} onChange={e => setEditData(p => ({ ...p, emoji: e.target.value }))}
-                                                        className="w-full text-base bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none">
+                                                        className="w-full text-base bg-white border border-[#E8ECEF] rounded-lg focus:outline-none focus:border-[#FF4B2B]">
                                                         <option value="">...</option>
                                                         {EMOJIS.map(e => <option key={e} value={e}>{e}</option>)}
                                                     </select>
-                                                    <div className="relative h-8 w-full bg-gray-100 dark:bg-gray-800 border border-dashed rounded-lg flex items-center justify-center overflow-hidden">
+                                                    <div className="relative h-8 w-full bg-gray-50 border border-dashed border-[#E8ECEF] rounded-lg flex items-center justify-center overflow-hidden">
                                                         <input
                                                             type="file"
                                                             accept="image/*"
@@ -455,10 +455,10 @@ export default function MenuManager() {
                                                     </div>
                                                 </div>
                                                 <input value={editData.name} onChange={e => setEditData(p => ({ ...p, name: e.target.value }))}
-                                                    className="flex-1 px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border border-primary rounded-lg focus:outline-none h-fit self-center" />
+                                                    className="flex-1 px-2 py-1 text-sm bg-white border border-[#FF4B2B] rounded-lg focus:outline-none h-fit self-center" />
                                             </div>
                                         ) : (
-                                            <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                            <span className="font-semibold text-sm text-[#1A1A1A] flex items-center gap-2">
                                                 {(item.emoji?.startsWith('/uploads/') || item.emoji?.startsWith('http')) ? (
                                                     <img src={item.emoji} alt="" className="w-6 h-6 object-contain inline-block" />
                                                 ) : (
@@ -471,16 +471,16 @@ export default function MenuManager() {
                                     <td className="px-4 py-3">
                                         {editingId === item.id ? (
                                             <input type="number" value={editData.price} onChange={e => setEditData(p => ({ ...p, price: e.target.value }))}
-                                                className="w-20 px-2 py-1 text-sm bg-gray-50 dark:bg-gray-700 border border-primary rounded-lg focus:outline-none" />
+                                                className="w-20 px-2 py-1 text-sm bg-white border border-[#FF4B2B] rounded-lg focus:outline-none" />
                                         ) : (
-                                            <span className="text-sm font-bold text-primary">{item.price} DH</span>
+                                            <span className="text-sm font-bold text-[#FF4B2B]">{item.price} DH</span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 align-top min-w-[150px]">
                                         {editingId === item.id ? (
-                                            <div className="flex flex-wrap gap-1 p-1 bg-gray-50 dark:bg-gray-700 border border-primary rounded-lg max-h-32 overflow-y-auto w-full">
+                                            <div className="flex flex-wrap gap-1 p-1 bg-white border border-[#FF4B2B] rounded-lg max-h-32 overflow-y-auto w-full">
                                                 {CATEGORIES.map(c => (
-                                                    <label key={c} className="flex items-center gap-1 cursor-pointer bg-white dark:bg-gray-800 px-1.5 py-1 rounded w-full text-xs box-border">
+                                                    <label key={c} className="flex items-center gap-1 cursor-pointer bg-gray-50 px-1.5 py-1 rounded w-full text-xs box-border">
                                                         <input
                                                             type="checkbox"
                                                             className="w-3 h-3 flex-shrink-0"
@@ -502,11 +502,11 @@ export default function MenuManager() {
                                     <td className="px-4 py-3">
                                         {editingId === item.id ? (
                                             <select value={editData.station} onChange={e => setEditData(p => ({ ...p, station: e.target.value }))}
-                                                className="px-2 py-1 text-xs bg-gray-50 dark:bg-gray-700 border border-primary rounded-lg focus:outline-none">
+                                                className="px-2 py-1 text-xs bg-white border border-[#FF4B2B] rounded-lg focus:outline-none">
                                                 {STATIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                             </select>
                                         ) : (
-                                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{item.station}</span>
+                                            <span className="text-xs font-semibold text-gray-500">{item.station}</span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3">
@@ -548,7 +548,7 @@ export default function MenuManager() {
                     </table>
                 </div>
             </div>
-            <p className="text-xs text-gray-400 text-center">{items.length} صنف إجمالاً • {items.filter(i => i.available).length} متاح</p>
+            <p className="text-xs text-gray-400 text-center">{items.length} صنف إجمالاً · {items.filter(i => i.available).length} متاح · {items.filter(i => !i.available).length} غير متاح</p>
         </div>
     );
 }

@@ -1,95 +1,28 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
-import AdminStatsCard from '@/components/AdminStatsCard';
-import MenuManager from '@/components/MenuManager';
-import OrderHistory from '@/components/OrderHistory';
-import { isAuthenticated, logout } from '@/lib/auth';
-
-function getOrderStatusDisplay(order) {
-    if (order.status === 'completed') {
-        return { label: '✓ مكتمل', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' };
-    }
-    if (order.status === 'preparing') {
-        return { label: '👨‍🍳 يطبخ الآن', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
-    }
-    if (order.status === 'cancelled') {
-        return { label: '🚫 ملغى', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 line-through' };
-    }
-
-    const start = order.created_at ? new Date(order.created_at).getTime() : (order.startTime || Date.now());
-    const elapsed = Math.floor((Date.now() - start) / 1000);
-
-    if (elapsed > 600) {
-        return { label: '🔥 متأخر', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
-    }
-    if (elapsed > 300) {
-        return { label: '⚠️ بطيء', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' };
-    }
-    return { label: '⏳ جديد', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
-}
-
-const STATION_COLORS = {
-    Grill: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    Salads: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    Oven: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    Fryer: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    Bar: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-};
-
-function formatTime(isoString) {
-    if (!isoString) return '—';
-    return new Date(isoString).toLocaleTimeString('ar-MA', { hour: '2-digit', minute: '2-digit' });
-}
+import { useLanguage } from '@/lib/LanguageContext';
+import Sidebar from '@/components/Sidebar';
 
 export default function AdminPage() {
-    const router = useRouter();
+    const { t, dir, lang } = useLanguage();
     const [orders, setOrders] = useState([]);
-    const [filter, setFilter] = useState('all');
-    const [activeTab, setActiveTab] = useState('orders');
     const [isLoading, setIsLoading] = useState(true);
-    const [lastRefreshed, setLastRefreshed] = useState(null);
-    const [authed, setAuthed] = useState(false);
 
     const fetchOrders = useCallback(async () => {
         try {
             const res = await fetch('/api/orders');
             if (res.ok) {
                 const data = await res.json();
-                // Also get saved from localStorage
                 const saved = typeof window !== 'undefined'
                     ? JSON.parse(localStorage.getItem('kds_orders') || '[]')
                     : [];
-
-                // Merge: API orders + localStorage orders (deduplicated)
                 const apiIds = new Set(data.map(o => o.id));
-
-                // Only keep local orders if they are truly not on the server yet (e.g. offline fallback)
-                // If the server *did* have it before but now it's gone, or if it has updated status, the API version wins.
                 const localOnly = saved.filter(o =>
                     !apiIds.has(o.id) &&
                     (String(o.id).includes('offline') || String(o.id).includes('fallback'))
                 );
-
-                // Proactively purge old zombie server orders from the local cache so they don't bloat memory
-                if (typeof window !== 'undefined') {
-                    localStorage.setItem('kds_orders', JSON.stringify(localOnly));
-                }
-
-                // IMPORTANT: If a local order was marked completed/cancelled by ANOTHER device, 
-                // the API `data` will have the new status. We just use `data`.
-                const allOrders = [...data, ...localOnly].sort((a, b) => {
-                    const aTime = a.created_at ? new Date(a.created_at).getTime() : (a.startTime || 0);
-                    const bTime = b.created_at ? new Date(b.created_at).getTime() : (b.startTime || 0);
-                    return bTime - aTime;
-                });
-
-                setOrders(allOrders);
-                setLastRefreshed(new Date());
+                setOrders([...data, ...localOnly]);
             }
         } catch (e) {
             console.error('Fetch orders error', e);
@@ -98,483 +31,197 @@ export default function AdminPage() {
         }
     }, []);
 
-    // Auth guard
     useEffect(() => {
-        if (!isAuthenticated()) {
-            router.replace('/admin/login');
-        } else {
-            setAuthed(true);
-        }
-    }, [router]);
-
-    useEffect(() => {
-        if (!authed) return;
         fetchOrders();
-        const interval = setInterval(fetchOrders, 3000);
+        const interval = setInterval(fetchOrders, 5000);
         return () => clearInterval(interval);
-    }, [fetchOrders, authed]);
+    }, [fetchOrders]);
 
-    const handleLogout = () => {
-        logout();
-        router.replace('/admin/login');
-    };
-
-    const handlePrintOrder = (order) => {
-        const printWindow = window.open('', '_blank');
-        const itemsHtml = (order.items || []).map(item => `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px;">
-                <span>${item.qty}x ${item.name}</span>
-                <span>${(Number(item.price || 0) * item.qty).toFixed(2)} DH</span>
-            </div>
-        `).join('');
-
-        printWindow.document.write(`
-            <html>
-                <head>
-                    <title>Bill #${String(order.id).slice(-6)}</title>
-                    <style>
-                        @media print { @page { margin: 0; } body { margin: 0.5cm; } }
-                        body { font-family: 'Courier New', Courier, monospace; width: 80mm; margin: 0 auto; color: #000; }
-                        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
-                        .details { margin-bottom: 10px; font-size: 12px; }
-                        .total { border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px; font-weight: bold; font-size: 18px; display: flex; justify-content: space-between; }
-                        .footer { text-align: center; margin-top: 20px; font-size: 11px; border-top: 1px solid #eee; padding-top: 10px; }
-                    </style>
-                </head>
-                <body onload="window.print(); window.close();">
-                    <div class="header">
-                        <h2 style="margin: 0;">PARIS FOOD</h2>
-                        <p style="margin: 5px 0; font-size: 12px;">Fast Food & Restaurant</p>
-                        <p style="margin: 0; font-size: 11px;">فاتورة طلب رقم: #${String(order.id).slice(-6)}</p>
-                    </div>
-                    <div class="details">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>تاريخ: ${new Date().toLocaleDateString('ar-MA')}</span>
-                            <span>وقت: ${new Date().toLocaleTimeString('ar-MA')}</span>
-                        </div>
-                        <div style="margin-top: 5px;">
-                            <b>الطاولة:</b> ${order.table_number || order.table || 'توصيل'} | <b>النوع:</b> ${order.type || 'Dine-In'}
-                        </div>
-                    </div>
-                    <div style="border-bottom: 1px solid #000; margin-bottom: 5px; padding-bottom: 5px; font-weight: bold;">
-                        الأصناف
-                    </div>
-                    ${itemsHtml}
-                    <div class="total">
-                        <span>المجموع الإجمالي</span>
-                        <span>${Number(order.total_amount || 0).toFixed(2)} DH</span>
-                    </div>
-                    <div class="footer">
-                        <p>شكراً لزيارتكم!</p>
-                        <p>Merci de votre visite!</p>
-                        <p style="font-size: 9px; color: #666;">Generated by KDS POS Pro</p>
-                    </div>
-                </body>
-            </html>
-        `);
-        printWindow.document.close();
-    };
-
-    const handleBump = async (id) => {
-        try {
-            const res = await fetch('/api/orders', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, status: 'completed' }),
-            });
-            if (res.ok) {
-                setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'completed' } : o));
-                // Also update localStorage
-                if (typeof window !== 'undefined') {
-                    const saved = JSON.parse(localStorage.getItem('kds_orders') || '[]');
-                    const updated = saved.filter(o => o.id !== id);
-                    localStorage.setItem('kds_orders', JSON.stringify(updated));
-                }
-                toast.success(`Order #${id} marked complete`);
-            }
-        } catch (e) {
-            toast.error('Failed to update order');
-        }
-    };
-
-    const handleCancel = async (id) => {
-        try {
-            const res = await fetch('/api/orders', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, status: 'cancelled' }),
-            });
-            if (res.ok) {
-                setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'cancelled' } : o));
-                if (typeof window !== 'undefined') {
-                    const saved = JSON.parse(localStorage.getItem('kds_orders') || '[]');
-                    const updated = saved.map(o => o.id === id ? { ...o, status: 'cancelled' } : o);
-                    localStorage.setItem('kds_orders', JSON.stringify(updated));
-                    window.dispatchEvent(new Event('local-storage-update'));
-                }
-                toast.success(`تم إلغاء الطلب #${id} وحفظه في الأرشيف`);
-            }
-        } catch (e) {
-            toast.error('Failed to cancel order');
-        }
-    };
-
-    const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
+    // ── Stats ─────────────────────────────────────────────────
     const completedOrders = orders.filter(o => o.status === 'completed');
+    const pendingOrders = orders.filter(o => o.status !== 'completed');
 
-    const filteredOrders = filter === 'all' ? orders.filter(o => o.status !== 'cancelled')
-        : filter === 'active' ? activeOrders
-            : completedOrders;
-
-    const allItems = filteredOrders.flatMap(o => o.items || []);
+    const revenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+    const allItems = completedOrders.flatMap(o => o.items || []);
     const totalItems = allItems.reduce((s, i) => s + (i.qty || 1), 0);
+    const averageSales = completedOrders.length > 0 ? revenue / completedOrders.length : 0;
 
-    // Station breakdown
-    const stationCounts = allItems.reduce((acc, item) => {
-        if (item.station) acc[item.station] = (acc[item.station] || 0) + (item.qty || 1);
-        return acc;
-    }, {});
+    // Top selling items
+    const itemCounts = {};
+    allItems.forEach(item => {
+        const name = item.name?.split(' (')[0];
+        if (name) itemCounts[name] = (itemCounts[name] || 0) + (item.qty || 1);
+    });
+    const topItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    // Top items
-    const itemCounts = allItems.reduce((acc, item) => {
-        acc[item.name] = (acc[item.name] || 0) + (item.qty || 1);
-        return acc;
-    }, {});
-    const topItems = Object.entries(itemCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+    // Today's figures
+    const today = new Date().toDateString();
+    const todayOrders = completedOrders.filter(o => {
+        const d = o.created_at || o.startTime;
+        return d && new Date(d).toDateString() === today;
+    });
+    const todayRevenue = todayOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
 
-    const revenue = filteredOrders.reduce((sum, order) => sum + (Number(order.total_amount) || 0), 0);
-    const revenueByMethod = filteredOrders.reduce((acc, order) => {
-        const method = order.payment_method || 'Cash';
-        acc[method] = (acc[method] || 0) + (Number(order.total_amount) || 0);
-        return acc;
-    }, {});
-
-    if (!authed) return null;
+    const currentDate = new Date().toLocaleDateString(lang === 'ar' ? 'ar-MA' : 'fr-MA', { day: 'numeric', month: 'long', year: 'numeric' });
 
     return (
-        <>
-            <Header />
-            <main className="max-w-[1400px] mx-auto p-6 pb-32">
-                {/* Page Title */}
-                <div className="flex items-center justify-between mb-6">
+        <div className="flex h-screen bg-[#F5F6FA] text-black overflow-hidden font-sans" dir={dir}>
+            <Sidebar />
+
+            <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#FDFDFD]">
+                {/* Header */}
+                <header className="h-[88px] shrink-0 px-8 flex items-center justify-between bg-white border-b border-[#E8ECEF]">
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Admin Dashboard</h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            مراقبة الطلبات وإدارة المطبخ
-                            {lastRefreshed && (
-                                <span className="ml-2 text-xs text-gray-400">
-                                    • آخر تحديث: {lastRefreshed.toLocaleTimeString('ar-MA')}
-                                </span>
-                            )}
-                        </p>
+                        <h1 className="text-[22px] font-bold text-[#1a1a1a]">{t('statsTitle')}</h1>
+                        <p className="text-sm text-gray-400 mt-0.5">{t('statsSub')}</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={fetchOrders}
-                            className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-300 transition-all"
-                        >
-                            <span className="material-symbols-outlined text-[18px]">refresh</span>
-                            تحديث
-                        </button>
-                        <button
-                            onClick={handleLogout}
-                            className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-xl text-sm font-bold transition-all"
-                        >
-                            <span className="material-symbols-outlined text-[18px]">logout</span>
-                            خروج
-                        </button>
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2 text-gray-500 font-medium">
+                            <span className="material-symbols-outlined text-[20px]">calendar_today</span>
+                            <span className="text-sm">{currentDate}</span>
+                        </div>
+                        <div className="w-[1px] h-6 bg-gray-200"></div>
+                        <div className="w-10 h-10 rounded-full bg-[#1A1A1A] flex items-center justify-center text-white font-bold text-sm">RF</div>
                     </div>
-                </div>
+                </header>
 
-                {/* Stats Row */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <AdminStatsCard
-                        title="طلبات نشطة"
-                        value={activeOrders.length}
-                        subtitle="في انتظار التحضير"
-                        icon="pending_actions"
-                        color="orange"
-                    />
-                    <AdminStatsCard
-                        title="مكتملة"
-                        value={completedOrders.length}
-                        subtitle="اليوم"
-                        icon="task_alt"
-                        color="green"
-                    />
-                    <AdminStatsCard
-                        title="إجمالي الإيرادات"
-                        value={`${revenue.toLocaleString()} DH`}
-                        subtitle={`${revenueByMethod.Cash || 0} Cash | ${revenueByMethod.Card || 0} Card`}
-                        icon="payments"
-                        color="blue"
-                    />
-                    <AdminStatsCard
-                        title="إجمالي الأصناف"
-                        value={totalItems}
-                        subtitle="عدد القطع المطلوبة"
-                        icon="fastfood"
-                        color="purple"
-                    />
-                </div>
+                <div className="flex-1 overflow-y-auto p-8 space-y-6">
 
-                {/* Tab Navigation */}
-                <div className="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
-                    {[
-                        { key: 'orders', label: 'الطلبات النشطة', icon: 'pending_actions' },
-                        { key: 'history', label: 'أرشيف الحسابات (مكتمل / ملغى)', icon: 'history' },
-                        { key: 'menu', label: 'إدارة القائمة', icon: 'restaurant_menu' },
-                    ].map(({ key, label, icon }) => (
-                        <button
-                            key={key}
-                            onClick={() => setActiveTab(key)}
-                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold border-b-2 -mb-px transition-all ${activeTab === key
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                                }`}
-                        >
-                            <span className="material-symbols-outlined text-[18px]">{icon}</span>
-                            <span className="hidden sm:block">{label}</span>
-                        </button>
-                    ))}
-                </div>
-
-                {/* Tab: Menu Manager */}
-                {activeTab === 'menu' && <MenuManager />}
-
-                {/* Tab: History */}
-                {activeTab === 'history' && <OrderHistory orders={orders} />}
-
-                {/* Tab: Active Orders */}
-                {activeTab === 'orders' && (
-                    <div className="flex flex-col lg:flex-row gap-6">
-                        {/* Orders Table */}
-                        <div className="flex-1 min-w-0">
-                            {/* Table Filter */}
-                            <div className="flex items-center gap-2 mb-4">
-                                {[
-                                    { key: 'all', label: `الكل (${orders.length})` },
-                                    { key: 'active', label: `نشط (${activeOrders.length})` },
-                                    { key: 'completed', label: `مكتمل (${completedOrders.length})` },
-                                ].map(({ key, label }) => (
-                                    <button
-                                        key={key}
-                                        onClick={() => setFilter(key)}
-                                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${filter === key
-                                            ? 'bg-primary text-white'
-                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                            }`}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
+                    {/* Hero Banner */}
+                    <div className="bg-gradient-to-r from-[#FF4B2B] to-[#FF8C42] rounded-2xl p-6 text-white flex items-center justify-between">
+                        <div>
+                            <p className="text-white/70 text-sm font-medium mb-1">Chiffre d'affaires aujourd'hui</p>
+                            <div className="text-[42px] font-black leading-tight">
+                                {todayRevenue.toFixed(2)} <span className="text-[20px] font-bold">DH</span>
                             </div>
+                            <p className="text-white/70 text-sm mt-2">{todayOrders.length} commandes complétées aujourd'hui</p>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-white/60 text-sm mb-1">En attente</div>
+                            <div className="text-[32px] font-bold">{pendingOrders.length}</div>
+                            <div className="text-white/60 text-sm">commandes actives</div>
+                        </div>
+                    </div>
 
-                            {/* Table */}
-                            <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden shadow-sm">
-                                {isLoading ? (
-                                    <div className="flex items-center justify-center h-48 text-gray-400">
-                                        <span className="material-symbols-outlined animate-spin text-3xl">progress_activity</span>
-                                    </div>
-                                ) : filteredOrders.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-48 text-gray-400 dark:text-gray-600">
-                                        <span className="material-symbols-outlined text-4xl mb-2">inbox</span>
-                                        <p className="font-semibold text-sm">لا توجد طلبات</p>
-                                    </div>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">رقم الطلب</th>
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الطاولة</th>
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">النوع</th>
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الأصناف</th>
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الوقت</th>
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">الحالة</th>
-                                                    <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">إجراء</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                                {filteredOrders.map(order => (
-                                                    <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                                                        <td className="px-4 py-3">
-                                                            <span className="font-mono text-xs font-bold text-gray-700 dark:text-gray-300">
-                                                                #{String(order.id).slice(-6)}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className="font-bold text-sm text-gray-900 dark:text-gray-100">
-                                                                {order.table_number || order.table || '—'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                                                                {order.type || 'Dine-In'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {(order.items || []).slice(0, 3).map((item, i) => (
-                                                                    <span key={i} className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-md">
-                                                                        {item.qty}× {item.name}
-                                                                    </span>
-                                                                ))}
-                                                                {(order.items || []).length > 3 && (
-                                                                    <span className="text-xs text-gray-400 font-bold">+{order.items.length - 3}</span>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 font-mono">
-                                                            {formatTime(order.created_at)}
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getOrderStatusDisplay(order).color}`}>
-                                                                {getOrderStatusDisplay(order).label}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <div className="flex items-center gap-1.5">
-                                                                {order.status !== 'completed' && (
-                                                                    <button
-                                                                        onClick={() => handleBump(order.id)}
-                                                                        title="إكمال الطلب"
-                                                                        className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/60 transition-all"
-                                                                    >
-                                                                        <span className="material-symbols-outlined text-[16px]">check</span>
-                                                                    </button>
-                                                                )}
-                                                                <button
-                                                                    onClick={() => handlePrintOrder(order)}
-                                                                    title="طباعة ticket"
-                                                                    className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-all"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-[16px]">print</span>
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleCancel(order.id)}
-                                                                    title="إلغاء وأرشفة الطلب"
-                                                                    className="p-1.5 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/60 transition-all"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-[16px]">cancel</span>
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                            { icon: 'payments', color: '#FF4B2B', label: 'Ventes totales', value: `${revenue.toFixed(2)} DH`, sub: `${completedOrders.length} commandes` },
+                            { icon: 'receipt_long', color: '#2D9CDB', label: 'Nb commandes', value: completedOrders.length, sub: `${orders.length} total (toutes)` },
+                            { icon: 'shopping_bag', color: '#27AE60', label: 'Articles vendus', value: totalItems, sub: 'unités au total' },
+                            { icon: 'analytics', color: '#F2994A', label: 'Panier moyen', value: `${averageSales.toFixed(2)} DH`, sub: 'par commande' },
+                        ].map(card => (
+                            <div key={card.label} className="bg-white rounded-xl p-5 border border-[#E8ECEF] shadow-sm">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <span className="material-symbols-outlined text-[20px]" style={{ color: card.color }}>{card.icon}</span>
+                                    <span className="text-xs font-semibold text-gray-500">{card.label}</span>
+                                </div>
+                                <div className="text-[24px] font-bold text-[#1A1A1A]">{card.value}</div>
+                                <div className="text-xs text-gray-400 mt-1">{card.sub}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Top Items + Recent Orders */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Top Selling */}
+                        <div className="bg-white rounded-xl p-6 border border-[#E8ECEF] shadow-sm">
+                            <h3 className="text-[15px] font-bold text-[#1A1A1A] mb-5">🏆 Top ventes</h3>
+                            {topItems.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-2 text-gray-300">
+                                    <span className="material-symbols-outlined text-4xl">bar_chart</span>
+                                    <p className="text-sm font-medium text-gray-400">Aucune donnée disponible</p>
+                                    <p className="text-xs text-gray-400">Les ventes apparaîtront ici après les premières commandes</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {topItems.map(([name, count], idx) => {
+                                        const max = topItems[0]?.[1] || 1;
+                                        const pct = Math.round((count / max) * 100);
+                                        const colors = ['#FF4B2B', '#FF8C42', '#F2994A', '#27AE60', '#2D9CDB'];
+                                        return (
+                                            <div key={name}>
+                                                <div className="flex justify-between items-center mb-1.5">
+                                                    <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                                        <span className="text-[11px] font-black w-5 h-5 rounded-full flex items-center justify-center text-white" style={{ backgroundColor: colors[idx] }}>{idx + 1}</span>
+                                                        <span className="truncate max-w-[180px]">{name}</span>
+                                                    </span>
+                                                    <span className="text-sm font-bold" style={{ color: colors[idx] }}>{count}x</span>
+                                                </div>
+                                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                                    <div className="h-2 rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: colors[idx] }} />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Recent Orders */}
+                        <div className="bg-white rounded-xl p-6 border border-[#E8ECEF] shadow-sm">
+                            <h3 className="text-[15px] font-bold text-[#1A1A1A] mb-5">📋 Dernières commandes</h3>
+                            {completedOrders.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-2 text-gray-300">
+                                    <span className="material-symbols-outlined text-4xl">receipt_long</span>
+                                    <p className="text-sm font-medium text-gray-400">Aucune commande complétée</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1 max-h-[260px] overflow-y-auto">
+                                    {[...completedOrders].reverse().slice(0, 10).map((order, idx) => (
+                                        <div key={order.id || idx} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+                                            <div>
+                                                <span className="text-sm font-bold text-gray-800">
+                                                    {order.table_number ? `Table ${order.table_number}` : order.table ? `Table ${order.table}` : 'À emporter'}
+                                                </span>
+                                                <span className="text-xs text-gray-400 ml-2">{order.items?.length || 0} articles</span>
+                                            </div>
+                                            <span className="text-sm font-black text-[#FF4B2B]">{Number(order.total_amount || 0).toFixed(2)} DH</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Revenue Chart */}
+                    <div className="bg-white rounded-xl p-8 border border-[#E8ECEF] shadow-sm">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-[15px] font-medium text-[#1A1A1A] mb-1">Évolution des ventes</h3>
+                                <div className="text-[28px] font-bold text-[#1A1A1A]">
+                                    {revenue.toFixed(2)} <span className="text-[16px] text-gray-400">DH</span>
+                                </div>
+                                <div className="text-sm text-gray-400">{completedOrders.length} commandes complétées</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-[#FF4B2B]"></div>
+                                <span className="text-sm text-gray-500">Cette période</span>
                             </div>
                         </div>
 
-                        {/* Right Panel: Station Breakdown */}
-                        <div className="w-full lg:w-[280px] shrink-0 space-y-4">
-                            <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-                                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-primary text-[18px]">bar_chart</span>
-                                    توزيع المحطات
-                                </h3>
-                                {Object.keys(stationCounts).length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-4">لا توجد بيانات بعد</p>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {Object.entries(stationCounts)
-                                            .sort((a, b) => b[1] - a[1])
-                                            .map(([station, count]) => {
-                                                const maxCount = Math.max(...Object.values(stationCounts));
-                                                const pct = Math.round((count / maxCount) * 100);
-                                                return (
-                                                    <div key={station}>
-                                                        <div className="flex items-center justify-between mb-1">
-                                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${STATION_COLORS[station] || 'bg-gray-100 text-gray-600'}`}>
-                                                                {station}
-                                                            </span>
-                                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{count} صنف</span>
-                                                        </div>
-                                                        <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-primary rounded-full transition-all duration-500"
-                                                                style={{ width: `${pct}%` }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                    </div>
-                                )}
+                        <div className="relative h-[180px] w-full flex">
+                            <div className="absolute left-0 top-0 bottom-0 w-10 flex flex-col justify-between text-xs text-gray-300 font-medium">
+                                <span>250</span><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span>
                             </div>
-
-                            {/* Top Items */}
-                            <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-                                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-primary text-[18px]">emoji_food_beverage</span>
-                                    أكثر الأصناف طلباً
-                                </h3>
-                                {topItems.length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-4">لا توجد بيانات بعد</p>
-                                ) : (
-                                    <div className="space-y-2.5">
-                                        {topItems.map(([name, count], i) => (
-                                            <div key={name} className="flex items-center gap-2">
-                                                <span className={`text-xs font-bold w-5 text-center ${i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-gray-300'
-                                                    }`}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
-                                                <span className="flex-1 text-xs text-gray-700 dark:text-gray-300 truncate font-medium">{name}</span>
-                                                <span className="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">{count}×</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Quick Actions */}
-                            <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-                                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-primary text-[18px]">bolt</span>
-                                    إجراءات سريعة
-                                </h3>
-                                <div className="space-y-2">
-                                    <a
-                                        href="/order"
-                                        className="flex items-center gap-2 w-full px-3 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-                                        طلب جديد
-                                    </a>
-                                    <a
-                                        href="/"
-                                        className="flex items-center gap-2 w-full px-3 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px]">display_settings</span>
-                                        شاشة المطبخ KDS
-                                    </a>
-                                    <button
-                                        onClick={() => {
-                                            if (confirm('تنبيه: سيؤدي هذا الإجراء إلى إخفاء الطلبات المكتملة من متصفحك الحالي فقط كإجراء سريع للتنظيف. ستبقى الطلبات محفوظة في أرشيف السحابة لأغراض المحاسبة. هل تريد الاستمرار؟')) {
-                                                const filteredForLocalState = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
-                                                setOrders(filteredForLocalState);
-                                                if (typeof window !== 'undefined') {
-                                                    const saved = JSON.parse(localStorage.getItem('kds_orders') || '[]');
-                                                    localStorage.setItem('kds_orders', JSON.stringify(saved.filter(o => o.status !== 'completed' && o.status !== 'cancelled')));
-                                                }
-                                                toast.success('تم تنظيف الشاشة (الأرشيف لا يزال آمناً)');
-                                            }
-                                        }}
-                                        className="flex items-center gap-2 w-full px-3 py-2.5 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px]">cleaning_services</span>
-                                        تنظيف الشاشة
-                                    </button>
+                            <div className="absolute left-12 right-0 top-0 bottom-0 border-l border-[#E8ECEF] border-b">
+                                {[0,1,2,3,4].map(i => <div key={i} className="w-full border-t border-dashed border-[#F5F5F5] h-[20%]"></div>)}
+                                <div className="absolute bottom-0 left-0 right-0 h-full flex items-end justify-between px-6">
+                                    {[40, 65, 30, 82, 55, 90, 45, 70].map((h, idx) => (
+                                        <div key={idx} className="flex h-full items-end">
+                                            <div className="w-5 bg-[#FF4B2B] rounded-t-lg hover:opacity-80 transition-all" style={{ height: `${h}%` }} />
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
+                        <div className="flex justify-between text-xs text-gray-400 mt-3 ml-12 px-6">
+                            {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim', "Auj"].map(d => <span key={d}>{d}</span>)}
+                        </div>
                     </div>
-                )}
+
+                </div>
             </main>
-            <Footer />
-        </>
+        </div>
     );
 }
